@@ -8,6 +8,6 @@ HMAC_SECRET = "XDIKBYjsAlhVNn0VdsMn53Wwqrrl43cEXKSrLgu2juLjdaShjQpGEF9u6F63TCKG"
 # Binding para KV (opcional, para armazenar status)
 [[kv_namespaces]]
 binding = "STATUS_KV"
-id = "SEU_KV_NAMESPACE_ID"
+id = "0195645b16a6497aa9f712a977c99bce"
 # Para obter o ID: wrangler kv:namespace create "STATUS_KV"
 

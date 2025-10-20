@@ -4,10 +4,5 @@ compatibility_date = "2025-10-20"
 
 # Configurar com IP/URL do seu VPS
 [vars]
-BACKEND_URL = "http://SEU_VPS_IP:8200"
-
-# Rota customizada (opcional)
-[[routes]]
-pattern = "api.atlasreg.com/*"
-zone_name = "atlasreg.com"
+BACKEND_URL = "http://localhost:8200"
 

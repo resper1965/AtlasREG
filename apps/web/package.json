@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "pages:build": "npx @cloudflare/next-on-pages",
+    "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static --project-name=atlasreg-frontend",
+    "pages:dev": "npx @cloudflare/next-on-pages --dev",
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
@@ -55,6 +58,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.16.0",
     "@tailwindcss/postcss": "^4.1.14",
