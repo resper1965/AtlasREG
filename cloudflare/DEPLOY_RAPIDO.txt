@@ -1,0 +1,83 @@
+================================================================================
+            ATLASREG - DEPLOY RÁPIDO NA CLOUDFLARE
+                    Comandos Prontos
+================================================================================
+
+PASSO 1: INSTALAR WRANGLER
+===========================
+
+npm install -g wrangler
+wrangler login
+
+PASSO 2: CRIAR RECURSOS CLOUDFLARE
+===================================
+
+# Queue
+wrangler queues create atlasreg-ingest-queue
+
+# KV (opcional)
+wrangler kv:namespace create "STATUS_KV"
+# Copiar o ID gerado e colar em webhook-receiver/wrangler.toml
+
+# R2
+wrangler r2 bucket create atlasreg-gold
+
+PASSO 3: CONFIGURAR WORKERS
+============================
+
+cd /home/resper/nSaulo/cloudflare/workers
+
+# 1. api-gateway/wrangler.toml
+# Trocar: BACKEND_URL = "http://SEU_VPS_IP:8200"
+
+# 2. trigger-ingest/wrangler.toml
+# Trocar: API_SECRET = "seu-secret-forte-aqui"
+
+# 3. webhook-receiver/wrangler.toml
+# Trocar: HMAC_SECRET = "seu-hmac-secret-forte-aqui"
+# Trocar: id = "KV_NAMESPACE_ID_COPIADO"
+
+PASSO 4: DEPLOY WORKERS
+========================
+
+cd /home/resper/nSaulo/cloudflare/workers/api-gateway
+wrangler deploy
+
+cd /home/resper/nSaulo/cloudflare/workers/trigger-ingest
+wrangler deploy
+
+cd /home/resper/nSaulo/cloudflare/workers/webhook-receiver
+wrangler deploy
+
+PASSO 5: CONFIGURAR ORCHESTRATOR
+=================================
+
+cd /home/resper/nSaulo
+
+# Editar .env e adicionar:
+MODE=cloudflare
+CF_API_TOKEN=<seu_token>
+CF_ACCOUNT_ID=<seu_account_id>
+CF_QUEUE_NAME=atlasreg-ingest-queue
+HOOK_ENDPOINT=https://atlasreg-webhook-receiver.<seu>.workers.dev/hooks/ingest-complete
+HOOK_HMAC_SECRET=<mesmo_do_worker>
+
+# Restart
+docker-compose restart orchestrator
+
+PASSO 6: TESTAR
+===============
+
+# Trigger manual
+curl -X POST https://atlasreg-trigger-ingest.<seu>.workers.dev/trigger \
+  -H "Authorization: Bearer SEU_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"start_daily_ingest","date":"2025-10-20"}'
+
+# Ver logs Orchestrator
+docker logs -f atlasreg-orchestrator
+
+PRONTO! Sistema rodando na Cloudflare Edge! 🚀
+
+================================================================================
+

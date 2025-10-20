@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiar package files
+COPY apps/web/package*.json ./
+
+# Instalar dependências
+RUN npm ci
+
+# Copiar código
+COPY apps/web .
+
+# Build (para produção, em dev usamos npm run dev)
+# RUN npm run build
+
+# Porta
+EXPOSE 3000
+
+# Comando será sobrescrito no docker-compose para usar dev server
+CMD ["npm", "run", "dev"]
+

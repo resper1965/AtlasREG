@@ -1,0 +1,1192 @@
+================================================================================
+ATLASREG CURSOR v2.0 - DOCUMENTACAO TECNICA COMPLETA
+================================================================================
+
+Versao: 2.0.0
+Data: 20 de Outubro de 2025
+Powered by: ness.
+Desenvolvido por: Ricardo Esper (resper@ness.com.br)
+
+================================================================================
+INDICE
+================================================================================
+
+1. Visao Geral e Objetivo
+2. Arquitetura Detalhada
+3. Componentes Implementados
+4. Fluxos de Execucao
+5. Integracao com AtlasReg Core
+6. Integracao com Cloudflare
+7. Configuracao e Deploy
+8. Monitoramento e Logs
+9. Troubleshooting
+10. Roadmap
+
+================================================================================
+1. VISAO GERAL E OBJETIVO
+================================================================================
+
+OBJETIVO PRINCIPAL:
+Implementar servico Python de longa duracao que orquestra o pipeline de dados
+do AtlasReg Core, atuando como unico ponto de integracao entre arquitetura
+Cloudflare Edge e motor de IA/Processamento existente.
+
+PROBLEMA QUE RESOLVE:
+- Desacoplamento entre Cloudflare Workers (stateless, timeout 30s) e 
+  processamento de longa duracao (scrapers + IA, 10-30 minutos)
+- Orquestracao centralizada de multiplas fontes de dados
+- Garantia de entrega (queue) e retry automatico
+- Publicacao de resultados consolidados (JSON Gold)
+
+FUNCAO NA ARQUITETURA:
+┌────────────────────────────────────────────────────────────┐
+│ Cloudflare Edge (Frontend)                                 │
+│ - Workers (API, auth, cache)                               │
+│ - Queue (mensagens assincronas)                            │
+│ - KV (configuracao)                                        │
+│ - R2 (storage final)                                       │
+└───────────────────┬────────────────────────────────────────┘
+                    │
+                    │ Queue messages
+                    ↓
+┌────────────────────────────────────────────────────────────┐
+│ AtlasReg Cursor (Orquestrador)                             │
+│ - Consome fila                                             │
+│ - Busca config                                             │
+│ - Aciona AtlasReg Core                                     │
+│ - Aguarda processamento                                    │
+│ - Publica resultados                                       │
+│ - Notifica completion                                      │
+└───────────────────┬────────────────────────────────────────┘
+                    │
+                    │ Trigger scrapers/tasks
+                    ↓
+┌────────────────────────────────────────────────────────────┐
+│ AtlasReg Core (Processamento)                              │
+│ - Airflow (orquestra scrapers)                             │
+│ - Scrapy (coleta dados)                                    │
+│ - Celery (processamento assincrono)                        │
+│ - BERTimbau + spaCy (IA)                                   │
+│ - FAISS + Elasticsearch (indexacao)                        │
+│ - PostgreSQL + MinIO (storage)                             │
+└────────────────────────────────────────────────────────────┘
+
+================================================================================
+2. ARQUITETURA DETALHADA
+================================================================================
+
+COMPONENTES PRINCIPAIS:
+----------------------
+
+1. CFQueueConsumer (modules/cf_queue_consumer.py)
+   Responsabilidade: Consumir mensagens da fila
+   Modos: Cloudflare Queue (producao) ou Redis List (dev)
+   Polling: Long-polling com timeout configuravel
+   
+2. CFConfigClient (modules/cf_config_client.py)
+   Responsabilidade: Buscar configuracao dinamica
+   Fonte: Cloudflare KV (producao) ou JSON local (dev)
+   Cache: 5 minutos TTL
+   
+3. AtlasRegExecutor (modules/atlasreg_executor.py)
+   Responsabilidade: Orquestrar execucao de scrapers e processamento
+   Pattern: Facade + Adapter
+   Handlers: 5 tipos diferentes de sources
+   
+4. R2Publisher (modules/r2_publisher.py)
+   Responsabilidade: Publicar JSON Gold no storage
+   Protocolo: S3-compatible (boto3)
+   Features: SHA256, presigned URLs, metadata
+   
+5. Notifier (modules/notifier.py)
+   Responsabilidade: Notificar Cloudflare Worker
+   Seguranca: HMAC-SHA256 signing
+   Retry: Exponential backoff (3 tentativas)
+
+ADAPTERS (Design Pattern):
+--------------------------
+
+1. AirflowAdapter (adapters/airflow_adapter.py)
+   Integracao com: Apache Airflow 2.7.3
+   Metodo: REST API (/api/v1/dags/...)
+   Funcoes:
+   - trigger_dag(dag_id, conf, run_id)
+   - get_dag_run_status(dag_id, dag_run_id)
+   - wait_for_completion(dag_id, dag_run_id, timeout)
+   - list_dags()
+
+2. CeleryAdapter (adapters/celery_adapter.py)
+   Integracao com: Celery 5.3.4
+   Metodo: send_task() via broker Redis
+   Funcoes:
+   - send_task(task_name, args, kwargs, queue)
+   - wait_for_task(async_result, timeout)
+   - get_task_status(task_id)
+
+3. ScraperAdapter (adapters/scraper_adapter.py)
+   Integracao com: Scrapy 2.11.0
+   Metodo: subprocess (scrapy crawl)
+   Funcoes:
+   - run_spider(spider_name, output_file, args, timeout)
+   Fallback: Quando Airflow nao disponivel
+
+UTILITIES:
+----------
+
+1. HMACSigner (modules/hmac_signer.py)
+   Algoritmo: HMAC-SHA256
+   Uso: Assinar webhooks para Cloudflare
+   Funcoes:
+   - sign(payload) -> signature
+   - verify(payload, signature) -> bool
+   - sign_with_header(payload) -> headers dict
+
+2. Logger (utils/logger.py)
+   Biblioteca: structlog
+   Formato: JSON (producao) ou Console (dev)
+   Features: Contextvars, timestamps ISO, exc_info
+
+3. Retry (utils/retry.py)
+   Biblioteca: tenacity
+   Strategy: Exponential backoff
+   Decorators:
+   - @retry_with_backoff(max_attempts, min_wait, max_wait)
+   - @retry_network_call(max_attempts)
+
+CONFIGURACAO:
+-------------
+
+Settings (config/settings.py)
+   Biblioteca: pydantic-settings
+   Fonte: Environment variables
+   Validacao: Automatic via Pydantic
+   Singleton: get_settings()
+
+================================================================================
+3. COMPONENTES IMPLEMENTADOS
+================================================================================
+
+ESTRUTURA DE ARQUIVOS:
+apps/cursor/
+├── cursor_main.py (380 linhas)
+│   └── class CursorOrchestrator
+│       ├── __init__()
+│       ├── process_message(message)
+│       ├── _handle_daily_ingest(message)
+│       ├── _handle_reprocess(message)
+│       └── start()
+│
+├── config/
+│   ├── __init__.py
+│   ├── settings.py (160 linhas)
+│   │   └── class Settings (Pydantic)
+│   └── news_watchlist_config.json (config fallback)
+│
+├── modules/
+│   ├── __init__.py
+│   ├── cf_config_client.py (150 linhas)
+│   │   └── class CFConfigClient
+│   ├── cf_queue_consumer.py (200 linhas)
+│   │   └── class CFQueueConsumer
+│   ├── r2_publisher.py (180 linhas)
+│   │   └── class R2Publisher
+│   ├── hmac_signer.py (80 linhas)
+│   │   └── class HMACSigner
+│   ├── notifier.py (150 linhas)
+│   │   └── class Notifier
+│   └── atlasreg_executor.py (250 linhas)
+│       └── class AtlasRegExecutor
+│
+├── adapters/
+│   ├── __init__.py
+│   ├── airflow_adapter.py (180 linhas)
+│   │   └── class AirflowAdapter
+│   ├── celery_adapter.py (150 linhas)
+│   │   └── class CeleryAdapter
+│   └── scraper_adapter.py (130 linhas)
+│       └── class ScraperAdapter
+│
+├── utils/
+│   ├── __init__.py
+│   ├── logger.py (80 linhas)
+│   │   ├── setup_logging()
+│   │   ├── get_logger()
+│   │   └── class LogContext
+│   └── retry.py (60 linhas)
+│       ├── retry_with_backoff()
+│       └── retry_network_call()
+│
+├── requirements.txt (30 linhas)
+├── .env.example (50 linhas)
+└── README.md (400 linhas)
+
+TOTAL: ~2,630 linhas de codigo Python
+MODULOS: 14 arquivos .py
+CLASSES: 11 principais
+
+DOCKERFILE:
+docker/Dockerfile.cursor (35 linhas)
+   Base: python:3.11-slim
+   Dependencias: gcc, g++, curl
+   Workdir: /app
+   Healthcheck: Redis ping
+   Command: python cursor_main.py
+
+DOCKER COMPOSE:
+Servico adicionado: cursor
+   Container: atlasreg-cursor
+   Depends on: redis, minio, elasticsearch, celery-worker, airflow-webserver
+   Network: atlasreg-network
+   Volumes: apps/cursor, apps/scraper/scrapers (ro), models (ro)
+
+================================================================================
+4. FLUXOS DE EXECUCAO
+================================================================================
+
+FLUXO 1: START DAILY INGEST
+----------------------------
+
+Trigger: Mensagem {type: 'start_daily_ingest', date: '2025-10-20'}
+
+Passo 1: Receber mensagem
+   CFQueueConsumer.poll(timeout=30)
+   └─> message = {type: 'start_daily_ingest', ...}
+
+Passo 2: Gerar run_id
+   run_id = f"run_{uuid.uuid4().hex[:12]}"
+   Exemplo: "run_a1b2c3d4e5f6"
+
+Passo 3: Buscar configuracao
+   config = CFConfigClient.get_config('NEWS_WATCHLIST_CONFIG')
+   └─> {sources: [...], global_settings: {...}}
+
+Passo 4: Filtrar fontes ativas
+   sources = [s for s in config['sources'] if s.get('enabled')]
+   Exemplo: 7 sources ativas
+
+Passo 5: Executar coleta para cada fonte
+   Para cada fonte:
+      5.1. Identificar handler_id
+           handler_id = source['handler_id']  # Ex: 'SCRAPY_CVM_API'
+      
+      5.2. Buscar handler
+           handler_func = executor.handlers[handler_id]
+      
+      5.3. Executar handler
+           handler_func(source, run_id)
+           
+           Se SCRAPY_CVM_API:
+              └─> ScraperAdapter.run_spider(spider_id, args)
+                  └─> subprocess: scrapy crawl aneel_news -a run_id=...
+           
+           Se AIRFLOW_DAG:
+              └─> AirflowAdapter.trigger_dag(dag_id, conf)
+                  └─> POST /api/v1/dags/{dag_id}/dagRuns
+                  └─> AirflowAdapter.wait_for_completion()
+      
+      5.4. Coletar resultado
+           result = {success: True, items_count: 8, output_file: '/tmp/...'}
+
+Passo 6: Agregar resultados
+   batch_result = {
+      total_sources: 7,
+      success_count: 6,
+      error_count: 1,
+      total_items: 65
+   }
+
+Passo 7: Trigger processamento IA
+   Para cada documento coletado:
+      CeleryAdapter.send_task('process_document', [doc_id, run_id])
+      └─> Celery Worker executa:
+          7.1. Download de MinIO
+          7.2. Classificacao BERTimbau
+          7.3. Extracao entidades spaCy
+          7.4. Save PostgreSQL
+          7.5. Indexacao FAISS + Elasticsearch
+
+Passo 8: Aguardar processamento
+   Sleep 5s (tasks iniciarem)
+   └─> Celery workers processando em background
+
+Passo 9: Gerar JSON Gold
+   gold_task = executor.generate_gold_json(run_id, date)
+   └─> CeleryAdapter.send_task('generate_gold_json', kwargs={...})
+       └─> Celery Worker executa:
+           9.1. Query PostgreSQL (todos eventos do run_id)
+           9.2. Enriquecer com player_id (AIMS)
+           9.3. Adicionar score_confiabilidade
+           9.4. Consolidar em JSON
+   
+   gold_result = wait_for_task(gold_task, timeout=600)
+   └─> JSON Gold: {events: [...], metadata: {...}}
+
+Passo 10: Calcular SHA256
+   sha256 = R2Publisher.calculate_sha256(gold_result)
+   └─> hashlib.sha256(json_bytes).hexdigest()
+
+Passo 11: Publicar no R2
+   gold_key = f"gold/{date}/{run_id}.json"
+   publish_result = R2Publisher.publish(
+      data=gold_result,
+      key=gold_key,
+      metadata={'run_id': run_id, 'date': date}
+   )
+   └─> boto3.s3.put_object(Bucket='atlasreg-gold', Key=gold_key, Body=...)
+
+Passo 12: Assinar payload webhook
+   payload = {
+      event_type: 'ingest_complete',
+      run_id: run_id,
+      result: {file_path, sha256, documents_count}
+   }
+   signature = HMACSigner.sign(payload)
+
+Passo 13: Notificar Cloudflare Worker
+   Notifier.notify_ingest_complete(...)
+   └─> POST {hook_endpoint}/api/v1/hooks/ingest-complete
+       Headers: X-Signature, X-Signature-Algorithm
+       Body: payload (JSON)
+
+Passo 14: Done
+   Log: daily_ingest_complete, run_id=...
+   Status: SUCCESS
+
+TEMPO TOTAL ESTIMADO: 15-30 minutos
+DOCUMENTOS PROCESSADOS: 60-135
+OUTPUT: JSON Gold publicado no R2
+
+---
+
+FLUXO 2: REPROCESS
+-------------------
+
+Trigger: Mensagem {type: 'reprocess', date: '2025-10-15'}
+
+Passo 1: Receber mensagem
+Passo 2: Gerar run_id (reprocess_xxx)
+Passo 3: Trigger task de reprocessamento
+   CeleryAdapter.send_task('reprocess_date', kwargs={date, run_id})
+   └─> Celery Worker:
+       - Query documentos da data
+       - Re-executar classificacao
+       - Re-executar NER
+       - Re-indexar FAISS + ES
+
+Passo 4: Aguardar conclusao
+Passo 5: Gerar JSON Gold (mesma logica)
+Passo 6: Publicar no R2 (com sufixo _reprocessed)
+Passo 7: Notificar webhook
+Passo 8: Done
+
+TEMPO ESTIMADO: 10-20 minutos
+OUTPUT: JSON Gold atualizado
+
+================================================================================
+5. INTEGRACAO COM ATLASREG CORE
+================================================================================
+
+AIRFLOW (Orquestrador de Scrapers)
+-----------------------------------
+
+Endpoint: http://airflow-webserver:8080
+API: /api/v1/
+Auth: Basic (admin:admin)
+
+Integracao:
+   Cursor -> AirflowAdapter -> Airflow REST API -> DAG execution
+
+Exemplo: Trigger DAG
+   POST http://airflow-webserver:8080/api/v1/dags/aneel_news_daily/dagRuns
+   Body: {"conf": {"run_id": "run_123"}}
+   Response: {"dag_run_id": "manual_2025-10-20", "state": "queued"}
+
+Exemplo: Monitorar DAG
+   GET http://airflow-webserver:8080/api/v1/dags/aneel_news_daily/dagRuns/manual_2025-10-20
+   Response: {"state": "running"} -> ... -> {"state": "success"}
+
+Configuracao Necessaria:
+   airflow.cfg:
+      [api]
+      auth_backend = airflow.api.auth.backend.basic_auth
+      enable_experimental_api = true
+
+DAGs Disponiveis:
+   - aneel_news_daily (coleta ANEEL)
+   - dynamic_scrapers_dag (multi-source)
+
+---
+
+CELERY (Processamento Assincrono)
+----------------------------------
+
+Broker: redis://redis:6379/1
+Backend: redis://redis:6379/1
+App name: atlasreg
+
+Integracao:
+   Cursor -> CeleryAdapter -> Redis broker -> Celery Worker
+
+Tasks Necessarias (a implementar em celery_app.py):
+
+@app.task
+def process_document(doc_id: str, run_id: str) -> dict:
+    """Processa documento coletado"""
+    # 1. Download MinIO
+    # 2. Classificacao BERTimbau
+    # 3. NER spaCy
+    # 4. Save PostgreSQL
+    # 5. Index FAISS + ES
+    return {success: True, event_id: '...'}
+
+@app.task
+def generate_gold_json(run_id: str, date: str) -> dict:
+    """Gera JSON Gold consolidado"""
+    # 1. Query eventos do run_id
+    # 2. Enriquecer com player_id
+    # 3. Adicionar scores
+    # 4. Consolidar
+    return {events: [...], metadata: {...}}
+
+@app.task
+def reprocess_date(date: str, run_id: str) -> dict:
+    """Re-processa data especifica"""
+    # 1. Query documentos da data
+    # 2. Re-classificar
+    # 3. Re-extrair entidades
+    # 4. Re-indexar
+    return {documents_count: 65, errors: 0}
+
+Exemplo Envio:
+   from celery import Celery
+   app = Celery('atlasreg', broker='redis://redis:6379/1')
+   result = app.send_task('process_document', ['doc_123', 'run_abc'])
+   output = result.get(timeout=300)
+
+---
+
+SCRAPERS (Coleta de Dados)
+---------------------------
+
+Framework: Scrapy 2.11.0
+Localizacao: apps/scraper/scrapers/
+
+Spiders Existentes:
+   - aneel_news (ANEEL noticias)
+
+Integracao Direta (ScraperAdapter):
+   subprocess.run(['scrapy', 'crawl', 'aneel_news', '-a', 'run_id=...'])
+
+Integracao Via Airflow (Preferencial):
+   AirflowAdapter.trigger_dag('aneel_news_daily', conf={run_id: '...'})
+
+Configuracao:
+   scrapy.cfg:
+      [settings]
+      default = atlasreg_scrapers.settings
+   
+   settings.py:
+      ROBOTSTXT_OBEY = True
+      DOWNLOAD_DELAY = 5
+      USER_AGENT = 'AtlasReg/2.0 by ness.'
+
+---
+
+POSTGRESQL (Database)
+----------------------
+
+Conexao: DATABASE_URL (env var)
+Engine: SQLAlchemy
+
+Queries Necessarias:
+
+1. Buscar empresas (AIMS):
+   SELECT id, name, cnpj, player_id 
+   FROM companies 
+   WHERE player_id IS NOT NULL
+
+2. Listar documentos do run:
+   SELECT id, filename, source, status 
+   FROM documents 
+   WHERE metadata->>'run_id' = 'run_abc'
+
+3. Buscar eventos para JSON Gold:
+   SELECT e.*, c.player_id, c.name as company_name
+   FROM events e
+   LEFT JOIN companies c ON e.company_id = c.id
+   WHERE e.metadata->>'run_id' = 'run_abc'
+
+Tabela Nova Necessaria:
+   CREATE TABLE cursor_runs (
+      run_id VARCHAR(50) PRIMARY KEY,
+      type VARCHAR(50),  -- 'daily_ingest' ou 'reprocess'
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
+      status VARCHAR(20),  -- 'running', 'success', 'failed'
+      sources_count INTEGER,
+      documents_count INTEGER,
+      errors_count INTEGER,
+      gold_json_path VARCHAR(500),
+      metadata JSONB
+   );
+
+---
+
+MINIO / R2 (Object Storage)
+----------------------------
+
+Endpoint: http://minio:9000 (MinIO local) ou https://... (R2)
+Protocolo: S3-compatible (boto3)
+
+Buckets:
+   - raw-documents (documentos brutos dos scrapers)
+   - processed-data (documentos processados)
+   - atlasreg-gold (JSON Gold - NOVO)
+
+Estrutura JSON Gold:
+   atlasreg-gold/
+   ├── gold/
+   │   ├── 2025-10-20/
+   │   │   ├── run_abc123.json
+   │   │   ├── run_def456.json
+   │   │   └── run_ghi789_reprocessed.json
+   │   └── 2025-10-19/
+   │       └── run_xyz.json
+
+Operacoes:
+   # Upload
+   s3.put_object(Bucket='atlasreg-gold', Key=key, Body=json_bytes, Metadata={...})
+   
+   # Download
+   obj = s3.get_object(Bucket='atlasreg-gold', Key=key)
+   data = json.loads(obj['Body'].read())
+   
+   # List
+   response = s3.list_objects_v2(Bucket='atlasreg-gold', Prefix='gold/2025-10-20/')
+
+---
+
+ELASTICSEARCH (Indexacao)
+--------------------------
+
+URL: http://elasticsearch:9200
+Indices: atlasreg_events, atlasreg_documents
+
+Cursor nao indexa diretamente (Celery tasks fazem).
+
+Uso Indireto:
+   Celery task 'index_event' -> Elasticsearch
+   Cursor apenas triggera a task
+
+---
+
+REDIS (Cache e Locks)
+----------------------
+
+Database 0: Cache API
+Database 1: Celery broker/backend
+Database 2: Cursor (fila standalone, cache, locks)
+
+Uso no Cursor:
+   import redis
+   r = redis.from_url('redis://redis:6379/2')
+   
+   # Fila (modo standalone)
+   r.rpush('cursor:queue:ingest-queue', json.dumps(message))
+   
+   # Lock distribuido
+   lock = r.lock('cursor:processing', timeout=300)
+   if lock.acquire(blocking=False):
+       # processo...
+       lock.release()
+   
+   # Cache config
+   r.setex('cursor:config', 300, json.dumps(config))
+
+================================================================================
+6. INTEGRACAO COM CLOUDFLARE
+================================================================================
+
+CLOUDFLARE QUEUE (Entrada)
+---------------------------
+
+Producao: Cloudflare Queue (managed service)
+Dev/Test: Redis List (fallback)
+
+API Cloudflare Queue:
+   POST {cf_queue_endpoint}/queues/{queue_name}/messages
+   Headers: Authorization: Bearer {cf_api_token}
+   Body: {batch_size: 1, visibility_timeout: 30}
+   Response: {messages: [{id, body, timestamp}]}
+
+Ack Message:
+   POST {cf_queue_endpoint}/queues/{queue_name}/messages/{id}/ack
+
+Mensagens Esperadas:
+1. {type: 'start_daily_ingest', date: 'YYYY-MM-DD'}
+2. {type: 'reprocess', date: 'YYYY-MM-DD'}
+
+---
+
+CLOUDFLARE KV (Configuracao)
+-----------------------------
+
+Producao: Cloudflare KV
+Dev/Test: JSON local (config/news_watchlist_config.json)
+
+API Cloudflare KV:
+   GET {cf_kv_api_endpoint}/accounts/{account_id}/storage/kv/namespaces/{namespace_id}/values/{key}
+   Headers: Authorization: Bearer {api_token}
+   Response: JSON config
+
+Key: NEWS_WATCHLIST_CONFIG
+
+Schema:
+{
+  "sources": [
+    {
+      "id": "aneel_news",
+      "name": "ANEEL - Noticias",
+      "handler_id": "SCRAPY_CVM_API",
+      "spider_id": "aneel_news",
+      "url_feed": "https://...",
+      "enabled": true,
+      "schedule": "0 6 * * *"
+    }
+  ],
+  "global_settings": {
+    "alert_recipients": ["admin@atlasreg.com"],
+    "max_concurrent_sources": 5
+  }
+}
+
+---
+
+CLOUDFLARE R2 (Storage Final)
+------------------------------
+
+Producao: Cloudflare R2
+Dev/Test: MinIO local
+
+API: S3-compatible (boto3)
+
+Configuracao boto3:
+   s3 = boto3.client('s3',
+      endpoint_url=R2_ENDPOINT,
+      aws_access_key_id=R2_ACCESS_KEY,
+      aws_secret_access_key=R2_SECRET_KEY,
+      region_name='auto'
+   )
+
+Bucket: atlasreg-gold
+
+Upload:
+   s3.put_object(
+      Bucket='atlasreg-gold',
+      Key='gold/2025-10-20/run_123.json',
+      Body=json_bytes,
+      ContentType='application/json',
+      Metadata={
+         'sha256': '...',
+         'run_id': 'run_123',
+         'published_at': '2025-10-20T09:30:00Z'
+      }
+   )
+
+---
+
+CLOUDFLARE WORKER (Notificacao)
+--------------------------------
+
+Endpoint: {hook_endpoint}/api/v1/hooks/ingest-complete
+Metodo: POST
+Autenticacao: HMAC-SHA256
+
+Request:
+   Headers:
+      Content-Type: application/json
+      X-Signature: {hmac_signature}
+      X-Signature-Algorithm: HMAC-SHA256
+   
+   Body:
+      {
+         "event_type": "ingest_complete",
+         "run_id": "run_123",
+         "status": "success",
+         "completed_at": "2025-10-20T09:30:00Z",
+         "result": {
+            "file_path": "gold/2025-10-20/run_123.json",
+            "sha256": "abc123...",
+            "documents_count": 65,
+            "errors_count": 1
+         },
+         "metadata": {}
+      }
+
+HMAC Calculation:
+   payload_bytes = json.dumps(payload, sort_keys=True).encode('utf-8')
+   signature = hmac.new(secret, payload_bytes, hashlib.sha256).hexdigest()
+
+Cloudflare Worker Validation:
+   - Recebe payload + signature
+   - Recalcula signature com mesmo secret
+   - Compara (hmac.compare_digest)
+   - Se valido: processa notificacao
+   - Se invalido: retorna 401
+
+================================================================================
+7. CONFIGURACAO E DEPLOY
+================================================================================
+
+CONFIGURACAO LOCAL (Desenvolvimento)
+-------------------------------------
+
+1. Criar .env:
+   cp apps/cursor/.env.example apps/cursor/.env
+   
+2. Editar .env:
+   MODE=standalone
+   DATABASE_URL=postgresql://...
+   # Deixar CF_* vazios (nao usa em standalone)
+
+3. Configurar sources:
+   Editar: apps/cursor/config/news_watchlist_config.json
+   Habilitar/desabilitar sources
+
+4. Executar:
+   cd apps/cursor
+   python cursor_main.py
+
+Logs:
+   [2025-10-20 09:30:00] [INFO] cursor_starting mode=standalone
+   [2025-10-20 09:30:01] [INFO] queue_consumer_mode_standalone
+   [2025-10-20 09:30:02] [INFO] cursor_orchestrator_initialized
+
+---
+
+CONFIGURACAO DOCKER
+-------------------
+
+1. Build:
+   docker-compose build cursor
+
+2. Configurar .env do projeto:
+   DATABASE_URL=postgresql://...
+   MINIO_ROOT_USER=admin
+   MINIO_ROOT_PASSWORD=atlasreg2025
+   SECRET_KEY=your-secret-key
+
+3. Subir:
+   docker-compose up -d cursor
+
+4. Verificar:
+   docker ps | grep cursor
+   docker logs -f atlasreg-cursor
+
+5. Enviar mensagem teste:
+   docker exec atlasreg-redis redis-cli -n 2 RPUSH cursor:queue:ingest-queue '{"type":"start_daily_ingest","date":"2025-10-20"}'
+
+6. Monitorar logs:
+   docker logs atlasreg-cursor --tail 100 -f
+
+---
+
+CONFIGURACAO PRODUCAO (Cloudflare)
+-----------------------------------
+
+1. Configurar .env:
+   MODE=cloudflare
+   CF_API_TOKEN=your_token
+   CF_QUEUE_ENDPOINT=https://...
+   CF_KV_API_ENDPOINT=https://...
+   R2_ENDPOINT=https://...
+   R2_ACCESS_KEY=...
+   R2_SECRET_KEY=...
+   HOOK_ENDPOINT=https://your-worker.workers.dev
+   HOOK_HMAC_SECRET=strong_secret_here
+
+2. Deploy container (mesmos passos Docker)
+
+3. Cloudflare Queue envia mensagens:
+   - Via cron trigger (diario)
+   - Via API manual
+   - Via Worker trigger
+
+4. Cursor consome e processa
+
+5. Publica no R2
+
+6. Notifica Worker
+
+================================================================================
+8. MONITORAMENTO E LOGS
+================================================================================
+
+LOGS ESTRUTURADOS
+-----------------
+
+Formato: JSON (producao) ou Console (dev)
+
+Exemplo Log:
+{
+  "event": "source_execution_complete",
+  "level": "info",
+  "timestamp": "2025-10-20T09:15:32.123456Z",
+  "source_id": "aneel_news",
+  "source_name": "ANEEL - Noticias",
+  "handler_id": "SCRAPY_CVM_API",
+  "run_id": "run_abc123",
+  "success": true,
+  "items_count": 8,
+  "duration_ms": 45230
+}
+
+Log Levels:
+- DEBUG: Detalhes de execucao
+- INFO: Eventos principais
+- WARNING: Problemas nao-criticos
+- ERROR: Erros que impedem conclusao
+
+---
+
+METRICAS (Prometheus)
+----------------------
+
+Metricas Planejadas:
+- cursor_messages_processed_total (counter)
+- cursor_processing_duration_seconds (histogram)
+- cursor_sources_executed_total (counter por handler_id)
+- cursor_errors_total (counter por tipo)
+- cursor_documents_processed_total (counter)
+
+Endpoint: http://cursor:9090/metrics (planejado)
+
+---
+
+DASHBOARDS
+----------
+
+Flower (Celery):
+   URL: http://localhost:5600
+   Monitora: Tasks Celery disparadas pelo Cursor
+
+Airflow:
+   URL: http://localhost:8300
+   Monitora: DAGs trigados pelo Cursor
+
+Logs:
+   docker logs atlasreg-cursor -f
+
+---
+
+ALERTAS
+-------
+
+Alertas em:
+- Falha de consumo da fila (3 retries)
+- Falha de scraper (source especifica)
+- Falha de processamento IA
+- Falha de publicacao R2
+- Falha de notificacao webhook
+
+Destino:
+- Logs (sempre)
+- Email (configuravel)
+- Slack/Teams (planejado)
+
+================================================================================
+9. TROUBLESHOOTING
+================================================================================
+
+PROBLEMA 1: Cursor nao inicia
+------------------------------
+Sintoma: Container crash loop
+
+Diagnostico:
+   docker logs atlasreg-cursor
+
+Causas Comuns:
+   - DATABASE_URL invalido
+   - Redis nao disponivel
+   - Dependencias faltando
+
+Solucao:
+   1. Verificar .env
+   2. Verificar containers dependentes (redis, minio)
+   3. Rebuild: docker-compose build cursor
+
+---
+
+PROBLEMA 2: Mensagens nao processadas
+--------------------------------------
+Sintoma: Mensagens ficam na fila
+
+Diagnostico:
+   docker exec atlasreg-redis redis-cli -n 2 LLEN cursor:queue:ingest-queue
+
+Causas:
+   - Cursor nao rodando
+   - Erro no message_handler
+   - Exception nao tratada
+
+Solucao:
+   1. Verificar logs: docker logs atlasreg-cursor
+   2. Processar manualmente
+   3. Fix bug e restart
+
+---
+
+PROBLEMA 3: Airflow trigger falha
+----------------------------------
+Sintoma: AirflowAdapter raise HTTPError 401/404
+
+Diagnostico:
+   curl -u admin:admin http://localhost:8300/api/v1/dags
+
+Causas:
+   - Airflow API desabilitada
+   - Credenciais erradas
+   - DAG nao existe
+
+Solucao:
+   1. Habilitar API em airflow.cfg
+   2. Verificar AIRFLOW_USERNAME/PASSWORD
+   3. Listar DAGs disponiveis
+
+---
+
+PROBLEMA 4: Celery task timeout
+--------------------------------
+Sintoma: wait_for_task() raise TimeoutError
+
+Diagnostico:
+   docker exec atlasreg-celery-worker celery -A celery_app inspect active
+
+Causas:
+   - Task muito lenta
+   - Worker travado
+   - Broker desconectado
+
+Solucao:
+   1. Aumentar timeout
+   2. Verificar workers ativos
+   3. Restart workers se necessario
+
+---
+
+PROBLEMA 5: R2 upload falha
+----------------------------
+Sintoma: R2Publisher.publish() raise boto3 error
+
+Diagnostico:
+   # Test connection
+   import boto3
+   s3 = boto3.client('s3', endpoint_url='http://minio:9000', ...)
+   s3.list_buckets()
+
+Causas:
+   - Credenciais invalidas
+   - Bucket nao existe
+   - Network error
+
+Solucao:
+   1. Verificar credenciais R2/MinIO
+   2. Criar bucket: s3.create_bucket(Bucket='atlasreg-gold')
+   3. Verificar connectivity
+
+================================================================================
+10. ROADMAP
+================================================================================
+
+v2.0.0 (Atual - 20/10/2025)
+---------------------------
+✓ Implementacao base completa
+✓ Modo standalone funcional
+✓ Adapters para Airflow, Celery, Scrapy
+✓ HMAC signing
+✓ Structured logging
+✓ Docker integration
+✓ Documentacao
+
+v2.1.0 (Planejado - Q4 2025)
+----------------------------
+- [ ] Modo cloudflare completo
+- [ ] Prometheus metrics endpoint
+- [ ] Health check API (/health)
+- [ ] Admin CLI commands
+- [ ] Parallel source execution
+- [ ] Advanced error recovery
+- [ ] Integration tests completos
+
+v2.2.0 (Planejado - Q1 2026)
+----------------------------
+- [ ] Grafana dashboard
+- [ ] Rate limiting inteligente
+- [ ] Circuit breaker pattern
+- [ ] Dead letter queue
+- [ ] Audit trail completo
+- [ ] Performance profiling
+
+================================================================================
+APENDICE A: SCHEMAS JSON
+================================================================================
+
+SCHEMA: Mensagem Queue (Input)
+-------------------------------
+{
+  "type": "start_daily_ingest" | "reprocess",
+  "date": "YYYY-MM-DD",
+  "payload": {},
+  "timestamp": "ISO 8601",
+  "message_id": "uuid"
+}
+
+---
+
+SCHEMA: Config KV (Input)
+--------------------------
+{
+  "sources": [
+    {
+      "id": "string",
+      "name": "string",
+      "handler_id": "SCRAPY_CVM_API" | "SCRAPY_NEWSROOM_PLAYER" | "DOWNLOAD_CSV" | "AIRFLOW_DAG" | "CUSTOM_SCRAPER",
+      "spider_id": "string",
+      "url_feed": "string",
+      "player_id": "string" (opcional),
+      "dag_id": "string" (se AIRFLOW_DAG),
+      "enabled": boolean,
+      "schedule": "cron expression"
+    }
+  ],
+  "global_settings": {
+    "alert_recipients": ["email"],
+    "alert_on_zero_results": boolean,
+    "max_concurrent_sources": integer,
+    "processing_timeout_minutes": integer
+  }
+}
+
+---
+
+SCHEMA: JSON Gold (Output)
+---------------------------
+{
+  "metadata": {
+    "run_id": "string",
+    "generated_at": "ISO 8601",
+    "date": "YYYY-MM-DD",
+    "sources_processed": integer,
+    "documents_count": integer,
+    "events_count": integer,
+    "version": "2.0"
+  },
+  "events": [
+    {
+      "event_id": "uuid",
+      "title": "string",
+      "summary": "string",
+      "event_type": "MULTA" | "DECISAO" | "TRANSACAO" | "INCIDENTE" | "NOTICIA" | "OUTRO",
+      "company": {
+        "id": "uuid",
+        "name": "string",
+        "cnpj": "string",
+        "player_id": "string"  // AIMS normalization
+      },
+      "amount": float,
+      "date": "YYYY-MM-DD",
+      "source": "string",
+      "source_url": "string",
+      "confidence_score": float,  // 0-1
+      "is_critical": boolean,
+      "entities": [
+        {
+          "type": "ORG" | "PERSON" | "MONEY" | "CNPJ" | "ASSET",
+          "text": "string",
+          "confidence": float
+        }
+      ],
+      "tags": ["string"]
+    }
+  ],
+  "errors": [
+    {
+      "source_id": "string",
+      "error_type": "string",
+      "error_message": "string",
+      "timestamp": "ISO 8601"
+    }
+  ]
+}
+
+---
+
+SCHEMA: Webhook Notification (Output)
+--------------------------------------
+{
+  "event_type": "ingest_complete" | "processing_error",
+  "run_id": "string",
+  "status": "success" | "partial" | "failed",
+  "completed_at": "ISO 8601",
+  "result": {
+    "file_path": "string",
+    "sha256": "string",
+    "documents_count": integer,
+    "errors_count": integer
+  },
+  "metadata": {}
+}
+
+Headers:
+   X-Signature: {hmac_hex}
+   X-Signature-Algorithm: HMAC-SHA256
+
+================================================================================
+APENDICE B: COMANDOS UTEIS
+================================================================================
+
+BUILD E DEPLOY:
+   docker-compose build cursor
+   docker-compose up -d cursor
+   docker-compose restart cursor
+   docker-compose logs -f cursor
+
+MONITORING:
+   docker logs atlasreg-cursor --tail 100 -f
+   docker stats atlasreg-cursor
+   docker exec atlasreg-cursor ps aux
+
+DEBUG:
+   docker exec -it atlasreg-cursor bash
+   docker exec atlasreg-cursor python -c "from config.settings import get_settings; print(get_settings())"
+
+REDIS QUEUE (Standalone):
+   # Push mensagem
+   docker exec atlasreg-redis redis-cli -n 2 RPUSH cursor:queue:ingest-queue '{"type":"start_daily_ingest","date":"2025-10-20"}'
+   
+   # Ver fila
+   docker exec atlasreg-redis redis-cli -n 2 LLEN cursor:queue:ingest-queue
+   
+   # Limpar fila
+   docker exec atlasreg-redis redis-cli -n 2 DEL cursor:queue:ingest-queue
+
+CELERY:
+   # Ver tasks ativas
+   docker exec atlasreg-celery-worker celery -A celery_app inspect active
+   
+   # Ver tasks registradas
+   docker exec atlasreg-celery-worker celery -A celery_app inspect registered
+
+AIRFLOW:
+   # Listar DAGs
+   curl -u admin:admin http://localhost:8300/api/v1/dags
+   
+   # Trigger manual
+   curl -X POST -u admin:admin http://localhost:8300/api/v1/dags/aneel_news_daily/dagRuns -H "Content-Type: application/json" -d '{"conf":{"run_id":"manual_test"}}'
+
+================================================================================
+DOCUMENTO PREPARADO POR: Ricardo Esper
+DATA: 20 de Outubro de 2025
+POWERED BY: ness.
+================================================================================
+

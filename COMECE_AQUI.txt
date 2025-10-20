@@ -1,0 +1,170 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║                  👉 ATLASREG - COMECE AQUI 👈                                ║
+║                                                                              ║
+║                  Deploy Cloudflare em 15 minutos                             ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+================================================================================
+3 WORKERS PRONTOS + ORCHESTRATOR RODANDO = DEPLOY CLOUDFLARE
+================================================================================
+
+📍 Localização: /home/resper/nSaulo/cloudflare/
+
+✓ api-gateway          → Proxy para FastAPI
+✓ trigger-ingest       → Envia para Queue
+✓ webhook-receiver     → Recebe notificações
+
+✓ Orchestrator local   → Rodando em Docker
+
+================================================================================
+PASSO A PASSO (15 MINUTOS)
+================================================================================
+
+1️⃣  INSTALAR WRANGLER (1 min)
+------------------------------
+npm install -g wrangler
+wrangler login
+
+2️⃣  CRIAR RECURSOS CLOUDFLARE (3 min)
+---------------------------------------
+wrangler queues create atlasreg-ingest-queue
+wrangler kv:namespace create "STATUS_KV"
+wrangler r2 bucket create atlasreg-gold
+
+# Copiar o KV Namespace ID que apareceu
+
+3️⃣  CONFIGURAR WORKERS (5 min)
+-------------------------------
+# Editar 3 arquivos:
+
+# A) cloudflare/workers/api-gateway/wrangler.toml
+BACKEND_URL = "http://SEU_VPS_IP:8200"
+
+# B) cloudflare/workers/trigger-ingest/wrangler.toml
+API_SECRET = "SUA_SENHA_FORTE_123"
+
+# C) cloudflare/workers/webhook-receiver/wrangler.toml
+HMAC_SECRET = "SUA_SENHA_FORTE_456"
+id = "COLE_O_KV_NAMESPACE_ID_AQUI"
+
+4️⃣  DEPLOY WORKERS (3 min)
+---------------------------
+cd /home/resper/nSaulo/cloudflare/workers/api-gateway
+wrangler deploy
+
+cd ../trigger-ingest
+wrangler deploy
+
+cd ../webhook-receiver
+wrangler deploy
+
+# Anotar as URLs dos Workers que aparecerem
+
+5️⃣  CONFIGURAR ORCHESTRATOR (2 min)
+------------------------------------
+# Editar /home/resper/nSaulo/.env
+
+# Adicionar no final:
+MODE=cloudflare
+CF_API_TOKEN=SEU_TOKEN_CLOUDFLARE
+CF_ACCOUNT_ID=SEU_ACCOUNT_ID
+CF_QUEUE_NAME=atlasreg-ingest-queue
+HOOK_ENDPOINT=https://atlasreg-webhook-receiver.SEU_SUBDOMAIN.workers.dev/hooks/ingest-complete
+HOOK_HMAC_SECRET=SUA_SENHA_FORTE_456
+
+# Restart
+docker-compose restart orchestrator
+
+6️⃣  TESTAR (1 min)
+-------------------
+# Health checks
+curl https://atlasreg-trigger-ingest.SEU_SUBDOMAIN.workers.dev/health
+
+# Trigger manual
+curl -X POST https://atlasreg-trigger-ingest.SEU_SUBDOMAIN.workers.dev/trigger \
+  -H "Authorization: Bearer SUA_SENHA_FORTE_123" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"start_daily_ingest","date":"2025-10-20"}'
+
+# Ver logs
+docker logs -f atlasreg-orchestrator
+
+PRONTO! Sistema rodando na Cloudflare Edge! 🚀
+
+================================================================================
+ONDE OBTER
+================================================================================
+
+CF_API_TOKEN:
+  Dashboard → Profile → API Tokens → Create Token
+  Template: "Edit Cloudflare Workers"
+  
+CF_ACCOUNT_ID:
+  Dashboard → Overview (sidebar direito)
+
+SEU_SUBDOMAIN:
+  Aparece ao fazer deploy do Worker
+  Ex: atlasreg-trigger-ingest.abc123.workers.dev
+                                └──┬───┘
+                            Seu subdomain
+
+================================================================================
+ARQUIVOS IMPORTANTES
+================================================================================
+
+cloudflare/
+├── workers/              → 3 Workers prontos
+│   ├── api-gateway/
+│   ├── trigger-ingest/
+│   └── webhook-receiver/
+├── README.md             → Guia completo
+└── DEPLOY_RAPIDO.txt     → Comandos copy-paste
+
+DOCUMENTAÇÃO:
+├── CLOUDFLARE_DEPLOY_COMPLETO.txt  (700+ linhas - detalhado)
+├── CLOUDFLARE_RESUMO.txt           (350+ linhas - executivo)
+├── ENTREGA_CLOUDFLARE.txt          (checklist completo)
+└── COMECE_AQUI.txt                 (este arquivo - rápido)
+
+================================================================================
+CUSTO
+================================================================================
+
+💰 $0/mês (FREE TIER Cloudflare)
+
+- Workers: 100k requests/dia
+- Queue: 1M mensagens/mês
+- KV: 100k reads/dia
+- R2: 10GB storage
+
+================================================================================
+SUPORTE
+================================================================================
+
+Dúvidas? Consulte:
+1. cloudflare/README.md
+2. CLOUDFLARE_DEPLOY_COMPLETO.txt
+3. Cloudflare Docs: https://developers.cloudflare.com/workers/
+
+================================================================================
+RESUMO
+================================================================================
+
+✅ 3 Workers criados (código production-ready)
+✅ Orchestrator rodando (Docker)
+✅ Documentação completa (1.400+ linhas)
+✅ Deploy em 15 minutos
+✅ Custo: $0/mês
+
+👉 PRÓXIMO PASSO: Instalar Wrangler
+
+   npm install -g wrangler
+   wrangler login
+
+   Depois seguir os 6 passos acima!
+
+================================================================================
+Powered by: ness. 🚀
+================================================================================

@@ -1,0 +1,372 @@
+================================================================================
+                 ATLASREG - SEGREGAÇÃO E ISOLAMENTO
+              Garantindo Independência Total do Projeto
+================================================================================
+
+Data: 20 de Outubro de 2025
+Powered by: ness.
+
+================================================================================
+CONFIRMAÇÃO: ATLASREG ESTÁ 100% SEGREGADO
+================================================================================
+
+✓ Network exclusiva: atlasreg-network
+✓ Nome do projeto: atlasreg
+✓ Prefixo de containers: atlasreg-*
+✓ Volumes isolados: atlasreg-*
+✓ Portas exclusivas: 3100, 6382, 8200, 8300, 9200/9201, 9300, 5600
+
+NENHUM componente do AtlasReg interfere com outros projetos!
+
+================================================================================
+CONTAINERS DO ATLASREG (11 containers)
+================================================================================
+
+Todos com prefixo "atlasreg-":
+
+1.  atlasreg-orchestrator       (Orquestrador Cloudflare/Python)
+2.  atlasreg-web                (Frontend Next.js - porta 3100)
+3.  atlasreg-api                (Backend FastAPI - porta 8200)
+4.  atlasreg-redis              (Cache/Queue - porta 6382)
+5.  atlasreg-minio              (Storage S3 - portas 9200/9201)
+6.  atlasreg-elasticsearch      (Search - porta 9300)
+7.  atlasreg-airflow-webserver  (Orquestração UI - porta 8300)
+8.  atlasreg-airflow-scheduler  (Airflow Scheduler)
+9.  atlasreg-celery-worker      (Worker assíncrono)
+10. atlasreg-celery-beat        (Scheduler Celery)
+11. atlasreg-celery-flower      (Monitor Celery - porta 5600)
+
+================================================================================
+OUTROS PROJETOS NO MESMO HOST (NÃO FAZEM PARTE DO ATLASREG)
+================================================================================
+
+Detectados no mesmo Docker Engine:
+
+- privacy-dataset-frontend
+- app-admin-dashboard
+- app-backend
+
+ATENÇÃO:
+--------
+Estes containers NÃO fazem parte do AtlasReg.
+Eles estão em networks separadas e não se comunicam com AtlasReg.
+São projetos completamente independentes.
+
+================================================================================
+ISOLAMENTO DE REDE
+================================================================================
+
+NETWORK EXCLUSIVA:
+------------------
+Nome: atlasreg_atlasreg-network
+Tipo: bridge
+Escopo: local
+
+APENAS containers AtlasReg podem se comunicar nesta network:
+✓ Isolamento total de outros projetos
+✓ Comunicação interna entre services AtlasReg
+✓ Acesso externo apenas por portas mapeadas
+
+COMUNICAÇÃO INTERNA (dentro da network):
+-----------------------------------------
+redis:6379              → Acesso interno
+minio:9000              → Acesso interno
+elasticsearch:9200      → Acesso interno
+airflow-webserver:8080  → Acesso interno
+api:8000                → Acesso interno
+
+COMUNICAÇÃO EXTERNA (host → containers):
+-----------------------------------------
+localhost:3100  → Frontend
+localhost:6382  → Redis
+localhost:8200  → API
+localhost:8300  → Airflow
+localhost:9200  → MinIO API
+localhost:9201  → MinIO Console
+localhost:9300  → Elasticsearch
+localhost:5600  → Celery Flower
+
+================================================================================
+ISOLAMENTO DE VOLUMES
+================================================================================
+
+Volumes Docker exclusivos do AtlasReg:
+
+1. atlasreg_redis_data
+2. atlasreg_minio_data
+3. atlasreg_es_data
+4. atlasreg_postgres_data
+5. atlasreg_airflow_logs
+6. atlasreg_airflow_plugins
+
+LOCALIZAÇÃO:
+------------
+/var/lib/docker/volumes/atlasreg_*
+
+NENHUM volume compartilhado com outros projetos!
+
+================================================================================
+ISOLAMENTO DE PORTAS
+================================================================================
+
+Portas EXCLUSIVAS do AtlasReg:
+
+3100  → Frontend (Next.js)
+5600  → Celery Flower
+6382  → Redis
+8200  → Backend API (FastAPI)
+8300  → Airflow Webserver
+9200  → MinIO API
+9201  → MinIO Console
+9300  → Elasticsearch
+
+CONFLITOS EVITADOS:
+-------------------
+✓ Redis: 6382 (evita 6379 padrão)
+✓ MinIO: 9200/9201 (evita 9100/9101)
+✓ API: 8200 (evita 8100)
+✓ Airflow: 8300 (evita 8200)
+✓ Elasticsearch: 9300 (evita 9200 conflito)
+
+================================================================================
+COMANDOS EXCLUSIVOS DO ATLASREG
+================================================================================
+
+SUBIR APENAS ATLASREG:
+----------------------
+$ cd /home/resper/nSaulo
+$ docker-compose up -d
+
+PARAR APENAS ATLASREG:
+----------------------
+$ cd /home/resper/nSaulo
+$ docker-compose stop
+
+REMOVER APENAS ATLASREG:
+------------------------
+$ cd /home/resper/nSaulo
+$ docker-compose down
+
+VER APENAS CONTAINERS ATLASREG:
+-------------------------------
+$ docker ps | grep atlasreg
+
+VER LOGS APENAS ATLASREG:
+-------------------------
+$ docker-compose logs -f
+
+LIMPAR VOLUMES ATLASREG (CUIDADO!):
+-----------------------------------
+$ cd /home/resper/nSaulo
+$ docker-compose down -v
+
+================================================================================
+ESTRUTURA DE DIRETÓRIOS
+================================================================================
+
+Tudo em: /home/resper/nSaulo/
+
+├── docker-compose.yml          (Configuração AtlasReg)
+├── .env                        (Variáveis AtlasReg)
+├── apps/
+│   ├── web/                   (Frontend AtlasReg)
+│   ├── api/                   (Backend AtlasReg)
+│   ├── orchestrator/          (Orchestrator AtlasReg)
+│   ├── scraper/               (Scrapers AtlasReg)
+│   └── airflow/               (DAGs AtlasReg)
+├── docker/
+│   ├── Dockerfile.web
+│   ├── Dockerfile.api
+│   └── Dockerfile.orchestrator
+└── docs/
+    └── (Documentação AtlasReg)
+
+NENHUM arquivo compartilhado com outros projetos!
+
+================================================================================
+GARANTIAS DE ISOLAMENTO
+================================================================================
+
+1. NAMESPACE DOCKER
+   ✓ Projeto nomeado: "atlasreg"
+   ✓ Todos os recursos prefixados: atlasreg_*
+
+2. NETWORK
+   ✓ Network exclusiva: atlasreg_atlasreg-network
+   ✓ Sem bridge com outros projetos
+   ✓ Isolamento Layer 2/3
+
+3. VOLUMES
+   ✓ Volumes exclusivos: atlasreg_*
+   ✓ Dados isolados
+   ✓ Sem compartilhamento
+
+4. PORTAS
+   ✓ Portas exclusivas (não padrão)
+   ✓ Sem conflitos
+   ✓ Mapeamento único
+
+5. CONTAINERS
+   ✓ Nomes únicos: atlasreg-*
+   ✓ Fácil identificação
+   ✓ Gerenciamento independente
+
+6. CÓDIGO
+   ✓ Diretório exclusivo: /home/resper/nSaulo
+   ✓ Sem dependências externas
+   ✓ Self-contained
+
+================================================================================
+COMO VERIFICAR ISOLAMENTO
+================================================================================
+
+TESTE 1: Ver apenas containers AtlasReg
+----------------------------------------
+$ docker ps --filter "name=atlasreg" --format "table {{.Names}}\t{{.Status}}"
+
+Deve mostrar APENAS os 11 containers AtlasReg.
+
+TESTE 2: Ver network exclusiva
+-------------------------------
+$ docker network inspect atlasreg_atlasreg-network
+
+Deve mostrar APENAS containers atlasreg-*.
+
+TESTE 3: Parar AtlasReg não afeta outros projetos
+--------------------------------------------------
+$ cd /home/resper/nSaulo
+$ docker-compose stop
+
+$ docker ps | grep -E "(privacy|app-)"
+
+Outros projetos continuam rodando!
+
+TESTE 4: Remover AtlasReg não afeta outros projetos
+----------------------------------------------------
+$ cd /home/resper/nSaulo
+$ docker-compose down
+
+$ docker ps
+
+Apenas containers AtlasReg são removidos.
+
+TESTE 5: Verificar volumes
+---------------------------
+$ docker volume ls | grep atlasreg
+
+Deve mostrar APENAS volumes atlasreg_*.
+
+================================================================================
+BOAS PRÁTICAS DE ISOLAMENTO
+================================================================================
+
+1. NUNCA compartilhar volumes entre projetos
+2. SEMPRE usar network exclusiva
+3. SEMPRE usar prefixos únicos (atlasreg-)
+4. NUNCA usar portas padrão (evitar conflitos)
+5. Documentar todas as dependências internas
+6. Manter docker-compose.yml autocontido
+7. Usar .env para configurações específicas
+8. Nomear o projeto no docker-compose.yml (name: atlasreg)
+
+================================================================================
+TROUBLESHOOTING: VERIFICAR SEGREGAÇÃO
+================================================================================
+
+PROBLEMA: Suspeita de interferência com outros projetos
+VERIFICAÇÃO:
+
+1. Checar network:
+   $ docker network inspect atlasreg_atlasreg-network
+
+2. Checar portas:
+   $ netstat -tulpn | grep -E "(3100|6382|8200|8300|9200|9201|9300|5600)"
+
+3. Checar volumes:
+   $ docker volume ls | grep atlasreg
+
+4. Checar containers:
+   $ docker ps --filter "name=atlasreg"
+
+5. Testar isolamento:
+   $ docker-compose down
+   $ docker ps  # Outros projetos devem continuar
+
+================================================================================
+MIGRAÇÃO/BACKUP DO ATLASREG
+================================================================================
+
+Para mover o AtlasReg para outro servidor mantendo isolamento:
+
+1. BACKUP CÓDIGO:
+   $ cd /home/resper
+   $ tar -czf atlasreg-code.tar.gz nSaulo/
+
+2. BACKUP VOLUMES:
+   $ docker run --rm -v atlasreg_redis_data:/data -v $(pwd):/backup \
+     alpine tar czf /backup/atlasreg-volumes.tar.gz /data
+
+3. EXPORT CONFIGURAÇÃO:
+   $ cd /home/resper/nSaulo
+   $ docker-compose config > atlasreg-compose-backup.yml
+
+4. RESTAURAR EM NOVO SERVIDOR:
+   $ mkdir -p /opt/atlasreg
+   $ tar -xzf atlasreg-code.tar.gz -C /opt/
+   $ cd /opt/nSaulo
+   $ docker-compose up -d
+
+PRONTO! AtlasReg isolado no novo servidor.
+
+================================================================================
+RESUMO: SEGREGAÇÃO 100% GARANTIDA
+================================================================================
+
+✓ Network exclusiva (atlasreg_atlasreg-network)
+✓ Volumes isolados (atlasreg_*)
+✓ Containers nomeados (atlasreg-*)
+✓ Portas exclusivas (sem conflitos)
+✓ Código isolado (/home/resper/nSaulo)
+✓ Projeto nomeado (name: atlasreg)
+
+NENHUMA interferência com:
+- privacy-dataset-frontend
+- app-admin-dashboard
+- app-backend
+- Ou QUALQUER outro projeto no mesmo host
+
+O AtlasReg é COMPLETAMENTE INDEPENDENTE!
+
+GERENCIAMENTO:
+--------------
+Todos os comandos docker-compose em /home/resper/nSaulo afetam
+APENAS o AtlasReg, nunca outros projetos.
+
+CONFIANÇA:
+----------
+Você pode subir, parar, remover, rebuild AtlasReg quantas vezes
+quiser SEM AFETAR nenhum outro projeto no mesmo servidor.
+
+================================================================================
+PRÓXIMOS PASSOS
+================================================================================
+
+1. ✓ Verificar isolamento (COMPLETO)
+2. ✓ Documentar segregação (COMPLETO)
+3. → Testar AtlasReg (enviar mensagens)
+4. → Desenvolver features específicas
+5. → Deploy em VPS dedicado (opcional)
+
+RECOMENDAÇÃO ADICIONAL:
+-----------------------
+Para máximo isolamento em produção, considere:
+- VPS dedicado apenas para AtlasReg
+- Ou Docker Context separado
+- Ou namespace Kubernetes
+
+Mas a configuração atual JÁ GARANTE isolamento completo!
+
+================================================================================
+Powered by: ness. - AtlasReg é independente e segregado!
+================================================================================
+

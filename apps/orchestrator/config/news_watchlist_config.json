@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "id": "aneel_news",
+      "name": "ANEEL - Notícias",
+      "handler_id": "SCRAPY_CVM_API",
+      "spider_id": "aneel_news",
+      "url_feed": "https://www.gov.br/aneel/pt-br/assuntos/noticias",
+      "enabled": true,
+      "schedule": "0 6 * * *"
+    },
+    {
+      "id": "ons_ocorrencias",
+      "name": "ONS - Ocorrências",
+      "handler_id": "SCRAPY_NEWSROOM_PLAYER",
+      "spider_id": "ons_ocorrencias",
+      "url_feed": "http://www.ons.org.br/",
+      "enabled": true,
+      "schedule": "30 6 * * *"
+    }
+  ],
+  "global_settings": {
+    "alert_recipients": ["admin@atlasreg.com"],
+    "alert_on_zero_results": true,
+    "max_concurrent_sources": 5,
+    "processing_timeout_minutes": 30
+  }
+}
+

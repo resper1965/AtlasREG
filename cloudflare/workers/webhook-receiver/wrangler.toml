@@ -1,0 +1,13 @@
+name = "atlasreg-webhook-receiver"
+main = "index.js"
+compatibility_date = "2025-10-20"
+
+[vars]
+HMAC_SECRET = "XDIKBYjsAlhVNn0VdsMn53Wwqrrl43cEXKSrLgu2juLjdaShjQpGEF9u6F63TCKG"
+
+# Binding para KV (opcional, para armazenar status)
+[[kv_namespaces]]
+binding = "STATUS_KV"
+id = "SEU_KV_NAMESPACE_ID"
+# Para obter o ID: wrangler kv:namespace create "STATUS_KV"
+

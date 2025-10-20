@@ -1,0 +1,79 @@
+failed: 9
+passed: 2
+results:
+- id: aneel_noticias
+  name: "ANEEL - Not\xEDcias"
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: aneel_despachos
+  name: ANEEL - Despachos
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: aneel_pv
+  name: "ANEEL - Processos de Fiscaliza\xE7\xE3o (PV)"
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: ons_ocorrencias
+  name: "ONS - Ocorr\xEAncias Operacionais"
+  overall: manual
+  tests:
+    robots: true
+    selectors: manual
+    url: true
+- id: sigel
+  name: "SIGEL - Sistema de Informa\xE7\xF5es de Gera\xE7\xE3o"
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: canal_energia
+  name: Canal Energia
+  overall: manual
+  tests:
+    robots: true
+    selectors: manual
+    url: true
+- id: megawhat
+  name: MegaWhat Energy
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: epbr
+  name: EPBR - Energia Hoje
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: abrate
+  name: "ABRATE - Associa\xE7\xE3o Brasileira das Transmissoras"
+  overall: false
+  tests:
+    robots: true
+    url: true
+- id: mme
+  name: "MME - Minist\xE9rio de Minas e Energia"
+  overall: false
+  tests:
+    robots: true
+    selectors: false
+    url: true
+- id: epe
+  name: "EPE - Empresa de Pesquisa Energ\xE9tica"
+  overall: false
+  tests:
+    url: false
+total_sources: 11
+validation_date: '2025-10-17 22:14:08'

@@ -1,0 +1,334 @@
+# AtlasReg - Configuração de Fontes de Dados
+# Sistema configurável de scraping por ness.
+
+sources:
+  # ==========================================
+  # ÓRGÃOS REGULADORES OFICIAIS
+  # ==========================================
+  
+  - id: aneel_noticias
+    name: "ANEEL - Notícias"
+    enabled: true
+    priority: high
+    category: regulatorio
+    urls:
+      base: "https://www.gov.br/aneel/pt-br"
+      noticias: "https://www.gov.br/aneel/pt-br/assuntos/noticias"
+      busca: "https://www.gov.br/aneel/pt-br/assuntos/noticias?SearchableText={query}"
+    scraper_type: playwright  # Site usa JavaScript para carregar notícias
+    schedule: "0 6 * * *"  # Diário 06:00
+    selectors:
+      lista: "article, div[class*='news-item']"
+      titulo: "h2 a::text, h3 a::text"
+      url: "h2 a::attr(href), h3 a::attr(href)"
+      data: "time::attr(datetime), span.date::text"
+      resumo: "p.description::text, div.summary::text"
+    filters:
+      keywords:
+        - transmissão
+        - transmissora
+        - linhas de transmissão
+        - subestação
+        - RAP
+        - tarifa
+        - outorga
+    rate_limit: 5  # segundos entre requests
+    requires_javascript: true
+    
+  - id: aneel_despachos
+    name: "ANEEL - Despachos"
+    enabled: true
+    priority: high
+    category: regulatorio
+    urls:
+      base: "https://www.gov.br/aneel/pt-br/acesso-a-informacao/biblioteca/despachos"
+      lista: "https://www.gov.br/aneel/pt-br/acesso-a-informacao/biblioteca/despachos/{ano}"
+    scraper_type: scrapy
+    schedule: "0 7 * * *"  # Diário 07:00
+    selectors:
+      lista: "table.listing tr, div.despacho-item"
+      numero: "td.numero::text, .despacho-numero::text"
+      data: "td.data::text, .despacho-data::text"
+      assunto: "td.assunto::text, .despacho-assunto::text"
+      pdf: "a.pdf::attr(href), a[href$='.pdf']::attr(href)"
+    rate_limit: 5
+    
+  - id: aneel_pv
+    name: "ANEEL - Processos de Fiscalização (PV)"
+    enabled: true
+    priority: high
+    category: fiscalizacao
+    urls:
+      base: "https://www.gov.br/aneel/pt-br/centrais-de-conteudos/processos-de-fiscalizacao"
+      busca: "https://fiscalizacao.aneel.gov.br/consulta-processual"
+    scraper_type: scrapy
+    schedule: "0 8 * * 1"  # Segundas 08:00
+    selectors:
+      lista: "table.processos tr, div.processo-item"
+      numero_pv: "td.numero::text"
+      empresa: "td.agente::text, td.empresa::text"
+      valor: "td.valor::text"
+      data: "td.data-autuacao::text"
+      pdf: "a.documento::attr(href)"
+    rate_limit: 10  # PVs podem ser sensíveis, mais devagar
+    
+  - id: ons_ocorrencias
+    name: "ONS - Ocorrências Operacionais"
+    enabled: true
+    priority: high
+    category: operacional
+    urls:
+      base: "https://www.ons.org.br"
+      tempo_real: "https://www.ons.org.br/paginas/energia-agora/ocorrencias"
+      historico: "https://www.ons.org.br/paginas/servicos/informacoes-tecnicas/ocorrencias"
+    scraper_type: playwright  # Site usa JavaScript
+    schedule: "30 6 * * *"  # Diário 06:30
+    selectors:
+      lista: "div.ocorrencia-item, table.ocorrencias tr"
+      tipo: ".tipo-ocorrencia::text, td.tipo::text"
+      local: ".local::text, td.local::text"
+      data: ".data-ocorrencia::text, td.data::text"
+      descricao: ".descricao::text, td.descricao::text"
+      status: ".status::text, td.status::text"
+    rate_limit: 8
+    
+  - id: sigel
+    name: "SIGEL - Sistema de Informações de Geração"
+    enabled: true
+    priority: medium
+    category: cadastral
+    urls:
+      base: "https://sigel.aneel.gov.br/portal/home/index.html"
+      agentes: "https://sigel.aneel.gov.br/portal/consulta-agentes"
+    scraper_type: scrapy
+    schedule: "0 9 1 * *"  # Dia 1 do mês, 09:00
+    selectors:
+      lista: "table.agentes tr"
+      nome: "td.nome::text"
+      cnpj: "td.cnpj::text"
+      grupo: "td.grupo-economico::text"
+      tipo: "td.tipo-agente::text"
+    rate_limit: 5
+    
+  # ==========================================
+  # MÍDIA ESPECIALIZADA
+  # ==========================================
+  
+  - id: canal_energia
+    name: "Canal Energia"
+    enabled: true
+    priority: medium
+    category: midia
+    urls:
+      base: "https://www.canalenergia.com.br"
+      noticias: "https://www.canalenergia.com.br/noticias/"
+      transmissao: "https://www.canalenergia.com.br/noticias/categoria/transmissao/"
+      regulacao: "https://www.canalenergia.com.br/noticias/categoria/regulacao/"
+    scraper_type: playwright
+    schedule: "0 9 * * *"  # Diário 09:00
+    selectors:
+      lista: "article.post, div.noticia-item"
+      titulo: "h2.entry-title a::text, h3.titulo::text"
+      url: "h2.entry-title a::attr(href), a.noticia-link::attr(href)"
+      data: "time.entry-date::attr(datetime), span.data::text"
+      resumo: "div.entry-summary::text, p.resumo::text"
+      categoria: "span.cat-links a::text, .categoria::text"
+    rate_limit: 5
+    requires_javascript: true
+    
+  - id: megawhat
+    name: "MegaWhat Energy"
+    enabled: true
+    priority: medium
+    category: midia
+    urls:
+      base: "https://megawhat.energy"
+      noticias: "https://megawhat.energy/noticias/"
+      analises: "https://megawhat.energy/analises/"
+    scraper_type: scrapy
+    schedule: "30 9 * * *"  # Diário 09:30
+    selectors:
+      lista: "article.feed"
+      titulo: "h2 a::text, h3 a::text"
+      url: "a.link::attr(href), h2 a::attr(href)"
+      data: "time::attr(datetime), span.date::text"
+      resumo: "p::text, div.excerpt::text"
+    filters:
+      keywords:
+        - transmissão
+        - energia
+        - elétrica
+    rate_limit: 5
+    
+  - id: epbr
+    name: "EPBR - Energia Hoje"
+    enabled: true
+    priority: medium
+    category: midia
+    urls:
+      base: "https://epbr.com.br"
+      transmissao: "https://epbr.com.br/categoria/transmissao/"
+      mercado: "https://epbr.com.br/categoria/mercado/"
+    scraper_type: scrapy
+    schedule: "0 10 * * *"  # Diário 10:00
+    selectors:
+      lista: "article.feed"
+      titulo: "h2 a::text, h3 a::text"
+      url: "a.link::attr(href), h2 a::attr(href)"
+      data: "time::attr(datetime), span.date::text"
+      categoria: "span.category::text, a.category::text"
+      resumo: "p::text"
+    filters:
+      keywords:
+        - transmissão
+        - transmissora
+        - energia
+    rate_limit: 5
+    paywall_aware: true  # Respeita paywall
+    
+  - id: estadao_economia_energia
+    name: "Estadão - Economia/Energia"
+    enabled: false  # Opcional
+    priority: low
+    category: midia
+    urls:
+      base: "https://www.estadao.com.br"
+      energia: "https://www.estadao.com.br/economia/energia"
+    scraper_type: playwright
+    schedule: "0 11 * * *"
+    rate_limit: 8
+    
+  - id: valor_economico_energia
+    name: "Valor Econômico - Energia"
+    enabled: false  # Opcional (paywall)
+    priority: low
+    category: midia
+    urls:
+      base: "https://valor.globo.com"
+      energia: "https://valor.globo.com/empresas/energia"
+    scraper_type: playwright
+    schedule: "0 11 * * *"
+    rate_limit: 10
+    paywall_aware: true
+    
+  # ==========================================
+  # ENTIDADES SETORIAIS
+  # ==========================================
+  
+  - id: abrate
+    name: "ABRATE - Associação Brasileira das Transmissoras"
+    enabled: true
+    priority: medium
+    category: entidade
+    urls:
+      base: "https://www.abrate.org.br"
+      noticias: "https://www.abrate.org.br/noticias"
+    scraper_type: scrapy
+    schedule: "0 12 * * *"  # Diário 12:00
+    rate_limit: 5
+    
+  - id: abce
+    name: "ABCE - Associação Brasileira de Companhias de Energia"
+    enabled: false  # Opcional
+    priority: low
+    category: entidade
+    urls:
+      base: "https://www.abce.org.br"
+    scraper_type: scrapy
+    schedule: "0 12 * * 2"  # Terças 12:00
+    rate_limit: 5
+    
+  # ==========================================
+  # GOVERNO E OFICIAL
+  # ==========================================
+  
+  - id: mme
+    name: "MME - Ministério de Minas e Energia"
+    enabled: true
+    priority: medium
+    category: governo
+    urls:
+      base: "https://www.gov.br/mme/pt-br"
+      noticias: "https://www.gov.br/mme/pt-br/assuntos/noticias"
+    scraper_type: playwright  # Site gov.br usa JavaScript
+    schedule: "0 13 * * *"  # Diário 13:00
+    selectors:
+      lista: "article, div[class*='news']"
+      titulo: "h2 a::text, h3 a::text"
+      url: "h2 a::attr(href), a.link::attr(href)"
+      data: "time::attr(datetime), span.date::text"
+      resumo: "p::text, div.summary::text"
+    rate_limit: 5
+    requires_javascript: true
+    filters:
+      keywords:
+        - transmissão
+        - energia elétrica
+        - setor elétrico
+        
+  - id: epe
+    name: "EPE - Empresa de Pesquisa Energética"
+    enabled: true
+    priority: low
+    category: governo
+    urls:
+      base: "https://www.epe.gov.br"
+      publicacoes: "https://www.epe.gov.br/pt/publicacoes"
+    scraper_type: scrapy
+    schedule: "0 0 * * 1"  # Segundas 00:00 (semanal)
+    rate_limit: 5
+    
+  # ==========================================
+  # MERCADO FINANCEIRO
+  # ==========================================
+  
+  - id: b3_fatos_relevantes
+    name: "B3 - Fatos Relevantes (Energia)"
+    enabled: false  # Fase 2 (requer API)
+    priority: high
+    category: financeiro
+    urls:
+      base: "https://www.b3.com.br"
+      api: "https://sistemaswebb3-listados.b3.com.br/companyProxy/CompanyCall/GetListedCompanies"
+    scraper_type: api
+    schedule: "*/30 * * * *"  # A cada 30 min
+    requires_auth: false
+    
+  - id: cvm_avisos
+    name: "CVM - Avisos e Fatos Relevantes"
+    enabled: false  # Fase 2
+    priority: high
+    category: financeiro
+    urls:
+      base: "https://www.gov.br/cvm/pt-br"
+    scraper_type: scrapy
+    schedule: "0 */4 * * *"  # A cada 4 horas
+    rate_limit: 10
+
+# ==========================================
+# CONFIGURAÇÕES GLOBAIS
+# ==========================================
+
+global_settings:
+  user_agent: "AtlasReg/1.0 by ness. (+https://atlasreg.com; contato@atlasreg.com)"
+  respect_robots_txt: true
+  default_rate_limit: 5
+  default_timeout: 30
+  default_retries: 3
+  concurrent_scrapers: 3  # Máximo de scrapers rodando simultaneamente
+  
+  # Detecção de mudanças
+  check_duplicates: true
+  duplicate_threshold: 0.9  # 90% similarity
+  
+  # Storage
+  minio_bucket: "raw-documents"
+  backup_retention_days: 90
+  
+  # Notifications
+  alert_on_zero_results: true
+  alert_on_errors: true
+  alert_recipients:
+    - "admin@atlasreg.com"
+    - "devops@ness.com.br"
+

@@ -1,0 +1,315 @@
+version: '3.8'
+
+name: atlasreg
+
+services:
+  # ==========================================
+  # DATABASES & STORAGE
+  # ==========================================
+  
+  redis:
+    image: redis:7-alpine
+    container_name: atlasreg-redis
+    restart: unless-stopped
+    ports:
+      - "6382:6379"  # Porta livre: 6382 (externa) -> 6379 (interna)
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - atlasreg-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: atlasreg-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9200:9000"  # API: porta livre 9200
+      - "9201:9001"  # Console UI: porta livre 9201
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-atlasreg2025}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - atlasreg-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: atlasreg-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"  # Reduzido para dev local
+      - cluster.name=atlasreg-cluster
+    ports:
+      - "9300:9200"  # Porta livre: 9300
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - atlasreg-network
+
+  # ==========================================
+  # BACKEND API
+  # ==========================================
+  
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: atlasreg-api
+    restart: unless-stopped
+    ports:
+      - "8200:8000"  # Porta livre: 8200
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-atlasreg2025}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - ENVIRONMENT=development
+    volumes:
+      - ./apps/api:/app
+      - ./models:/app/models:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - atlasreg-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ==========================================
+  # FRONTEND
+  # ==========================================
+  
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: atlasreg-web
+    restart: unless-stopped
+    ports:
+      - "3100:3000"  # Porta livre: 3100
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8200
+      - NODE_ENV=development
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    networks:
+      - atlasreg-network
+    command: npm run dev
+
+  # ==========================================
+  # AIRFLOW (Scraping Orchestrator)
+  # ==========================================
+  
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: atlasreg-airflow-webserver
+    restart: unless-stopped
+    ports:
+      - "8300:8080"  # Porta livre: 8300
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=${DATABASE_URL}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+    volumes:
+      - ./apps/scraper/dags:/opt/airflow/dags
+      - ./apps/scraper/plugins:/opt/airflow/plugins
+      - ./apps/scraper/logs:/opt/airflow/logs
+      - airflow_data:/opt/airflow
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - atlasreg-network
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@atlasreg.com || true &&
+               airflow webserver"
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: atlasreg-airflow-scheduler
+    restart: unless-stopped
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=${DATABASE_URL}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs=}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+    volumes:
+      - ./apps/scraper/dags:/opt/airflow/dags
+      - ./apps/scraper/plugins:/opt/airflow/plugins
+      - ./apps/scraper/logs:/opt/airflow/logs
+      - airflow_data:/opt/airflow
+    depends_on:
+      - airflow-webserver
+    networks:
+      - atlasreg-network
+    command: airflow scheduler
+
+  # ==========================================
+  # CELERY (Processing Workers)
+  # ==========================================
+  
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: atlasreg-celery-worker
+    restart: unless-stopped
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - DATABASE_URL=${DATABASE_URL}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-atlasreg2025}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    volumes:
+      - ./apps/scraper:/app
+      - ./models:/app/models:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - atlasreg-network
+    command: celery -A celery_app worker --loglevel=info --concurrency=2
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: atlasreg-celery-beat
+    restart: unless-stopped
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    volumes:
+      - ./apps/scraper:/app
+    depends_on:
+      - redis
+    networks:
+      - atlasreg-network
+    command: celery -A celery_app beat --loglevel=info
+
+  celery-flower:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: atlasreg-celery-flower
+    restart: unless-stopped
+    ports:
+      - "5600:5555"  # Porta livre: 5600
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      - redis
+    networks:
+      - atlasreg-network
+    command: celery -A celery_app flower --port=5555
+
+  # ==========================================
+  # ORCHESTRATOR (Pipeline Cloudflare-Python)
+  # ==========================================
+  
+  orchestrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.orchestrator
+    container_name: atlasreg-orchestrator
+    restart: unless-stopped
+    environment:
+      - MODE=standalone
+      - DATABASE_URL=${DATABASE_URL}
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - AIRFLOW_API_URL=http://airflow-webserver:8080
+      - AIRFLOW_USERNAME=admin
+      - AIRFLOW_PASSWORD=admin
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-atlasreg2025}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - REDIS_URL=redis://redis:6379/2
+      - HOOK_HMAC_SECRET=${SECRET_KEY:-dev-secret-key}
+      - LOG_LEVEL=INFO
+      - QUEUE_POLL_INTERVAL=30
+    volumes:
+      - ./apps/orchestrator:/app
+      - ./apps/scraper/scrapers:/app/scrapers:ro
+      - ./models:/app/models:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+      airflow-webserver:
+        condition: service_started
+    networks:
+      - atlasreg-network
+    command: python orchestrator_main.py
+
+# ==========================================
+# VOLUMES
+# ==========================================
+
+volumes:
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  es_data:
+    driver: local
+  airflow_data:
+    driver: local
+
+# ==========================================
+# NETWORKS
+# ==========================================
+
+networks:
+  atlasreg-network:
+    driver: bridge
+

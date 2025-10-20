@@ -1,0 +1,310 @@
+================================================================================
+           ATLASREG - DEPLOY COM DOMÍNIO atlasREG.ness.tec.br
+                    Configuração Completa
+================================================================================
+
+Data: 20 de Outubro de 2025
+Domínio: atlasREG.ness.tec.br
+Status: ✓ Senhas geradas | ☐ DNS a criar | ☐ Workers a deployar
+
+================================================================================
+SENHAS GERADAS (SEGURAS)
+================================================================================
+
+✓ API_SECRET:         zUI12gR2TWnTFTFXKYcdv2ZbsH0Rc3Ot6f2RW2AxTgHoO6U1
+✓ HMAC_SECRET:        XDIKBYjsAlhVNn0VdsMn53Wwqrrl43cEXKSrLgu2juLjdaShjQpGEF9u6F63TCKG
+✓ ORCHESTRATOR_SECRET: LWZCyImxj32Llfs0ZgyKTuBJPe5RyamRoGRqvolEtjX6WdySKelJsalMeEGU1Al9
+
+⚠️  Arquivo completo em: cloudflare/SENHAS_GERADAS.txt
+
+================================================================================
+PASSO 1: CRIAR DNS NA CLOUDFLARE
+================================================================================
+
+OPÇÃO A: Script Automático (Recomendado)
+-----------------------------------------
+./cloudflare/DNS_AUTOMATION.sh
+
+O script vai criar automaticamente:
+  ✓ atlasREG.ness.tec.br → atlasreg-frontend.pages.dev
+  ✓ api.atlasREG.ness.tec.br → atlasreg-api-gateway.workers.dev
+  ✓ trigger.atlasREG.ness.tec.br → atlasreg-trigger-ingest.workers.dev
+  ✓ webhook.atlasREG.ness.tec.br → atlasreg-webhook-receiver.workers.dev
+  ✓ vps.atlasREG.ness.tec.br → SEU_IP_VPS
+
+OPÇÃO B: Dashboard Manual
+--------------------------
+1. Acesse: https://dash.cloudflare.com/
+2. Selecione: ness.tec.br
+3. DNS → Records → Add record
+4. Criar conforme arquivo: DNS_CLOUDFLARE_CONFIG.txt
+
+================================================================================
+PASSO 2: CRIAR RECURSOS CLOUDFLARE
+================================================================================
+
+wrangler login
+
+# Queue
+wrangler queues create atlasreg-ingest-queue
+
+# KV
+wrangler kv:namespace create "STATUS_KV"
+# ANOTAR O ID QUE APARECER!
+
+# R2
+wrangler r2 bucket create atlasreg-gold
+
+# Obter Account ID
+wrangler whoami
+# ANOTAR O Account ID!
+
+================================================================================
+PASSO 3: CONFIGURAR WORKERS
+================================================================================
+
+WORKER 1: api-gateway
+---------------------
+Editar: cloudflare/workers/api-gateway/wrangler.toml
+
+name = "atlasreg-api-gateway"
+main = "index.js"
+compatibility_date = "2025-10-20"
+
+[vars]
+BACKEND_URL = "http://SEU_IP_VPS:8200"
+# Ou: BACKEND_URL = "http://vps.atlasREG.ness.tec.br:8200"
+
+[[routes]]
+pattern = "api.atlasREG.ness.tec.br/*"
+zone_name = "ness.tec.br"
+
+WORKER 2: trigger-ingest
+------------------------
+Editar: cloudflare/workers/trigger-ingest/wrangler.toml
+
+✓ API_SECRET já configurado automaticamente!
+
+Adicionar no final:
+
+[[routes]]
+pattern = "trigger.atlasREG.ness.tec.br/*"
+zone_name = "ness.tec.br"
+
+WORKER 3: webhook-receiver
+--------------------------
+Editar: cloudflare/workers/webhook-receiver/wrangler.toml
+
+✓ HMAC_SECRET já configurado automaticamente!
+
+Atualizar:
+id = "COLAR_KV_NAMESPACE_ID_AQUI"
+
+Adicionar no final:
+
+[[routes]]
+pattern = "webhook.atlasREG.ness.tec.br/*"
+zone_name = "ness.tec.br"
+
+================================================================================
+PASSO 4: DEPLOY WORKERS
+================================================================================
+
+cd /home/resper/nSaulo/cloudflare/workers
+
+# Worker 1
+cd api-gateway
+wrangler deploy
+cd ..
+
+# Worker 2
+cd trigger-ingest
+wrangler deploy
+cd ..
+
+# Worker 3
+cd webhook-receiver
+wrangler deploy
+cd ..
+
+================================================================================
+PASSO 5: CONFIGURAR ORCHESTRATOR
+================================================================================
+
+Editar: /home/resper/nSaulo/.env
+
+Adicionar/atualizar no final:
+
+# Cloudflare Mode
+MODE=cloudflare
+
+# Cloudflare API
+CF_API_TOKEN=1a3ea7b7e9efa3fda819583eb47080c62c4e1
+CF_ACCOUNT_ID=COLAR_ACCOUNT_ID_AQUI
+CF_QUEUE_NAME=atlasreg-ingest-queue
+CF_KV_NAMESPACE_ID=COLAR_KV_NAMESPACE_ID_AQUI
+
+# Webhook
+HOOK_ENDPOINT=https://webhook.atlasREG.ness.tec.br/hooks/ingest-complete
+HOOK_HMAC_SECRET=XDIKBYjsAlhVNn0VdsMn53Wwqrrl43cEXKSrLgu2juLjdaShjQpGEF9u6F63TCKG
+
+# R2 Storage (obter após criar R2)
+R2_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+R2_ACCESS_KEY=GERAR_ACCESS_KEY
+R2_SECRET_KEY=GERAR_SECRET_KEY
+R2_BUCKET=atlasreg-gold
+
+SALVAR E RESTART:
+
+docker-compose restart orchestrator
+
+================================================================================
+PASSO 6: TESTAR
+================================================================================
+
+# Aguardar propagação DNS (5-30 min)
+# Verificar DNS
+dig atlasREG.ness.tec.br
+dig api.atlasREG.ness.tec.br
+
+# Health checks
+curl https://api.atlasREG.ness.tec.br/health
+curl https://trigger.atlasREG.ness.tec.br/health
+curl https://webhook.atlasREG.ness.tec.br/health
+
+# Trigger manual
+curl -X POST https://trigger.atlasREG.ness.tec.br/trigger \
+  -H "Authorization: Bearer zUI12gR2TWnTFTFXKYcdv2ZbsH0Rc3Ot6f2RW2AxTgHoO6U1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "start_daily_ingest",
+    "date": "2025-10-20"
+  }'
+
+# Ver logs Orchestrator
+docker logs -f atlasreg-orchestrator
+
+================================================================================
+PASSO 7: DEPLOY FRONTEND (Cloudflare Pages)
+================================================================================
+
+cd /home/resper/nSaulo/apps/web
+
+# Build
+npm run build
+
+# Deploy
+npx wrangler pages deploy .next --project-name=atlasreg-frontend
+
+# Configurar domínio customizado
+Cloudflare Dashboard → Pages → atlasreg-frontend → Custom domains
+Add custom domain: atlasREG.ness.tec.br
+
+================================================================================
+URLS FINAIS
+================================================================================
+
+✓ Frontend:  https://atlasREG.ness.tec.br
+✓ API:       https://api.atlasREG.ness.tec.br
+✓ Trigger:   https://trigger.atlasREG.ness.tec.br
+✓ Webhook:   https://webhook.atlasREG.ness.tec.br
+✓ VPS:       https://vps.atlasREG.ness.tec.br
+
+================================================================================
+CHECKLIST COMPLETO
+================================================================================
+
+☐ 1. Criar DNS (script ou manual)
+☐ 2. Criar Queue, KV, R2
+☐ 3. Configurar Workers (domínio + senhas)
+☐ 4. Deploy Workers
+☐ 5. Configurar Orchestrator (.env)
+☐ 6. Restart Orchestrator
+☐ 7. Testar health checks
+☐ 8. Trigger manual
+☐ 9. Deploy Frontend
+☐ 10. Configurar domínio customizado frontend
+
+PRONTO! Sistema completo em https://atlasREG.ness.tec.br
+
+================================================================================
+ARQUIVOS DE REFERÊNCIA
+================================================================================
+
+cloudflare/SENHAS_GERADAS.txt          → Credenciais seguras
+cloudflare/DNS_CLOUDFLARE_CONFIG.txt   → Detalhes DNS
+cloudflare/DNS_AUTOMATION.sh           → Script automação DNS
+cloudflare/DEPLOY_COM_DOMINIO.txt      → Este arquivo
+
+================================================================================
+CUSTO
+================================================================================
+
+💰 $0/mês (FREE TIER Cloudflare)
+
+- Workers: 100k requests/dia
+- Queue: 1M mensagens/mês
+- KV: 100k reads/dia
+- R2: 10GB storage
+- Pages: Unlimited
+- DNS: Grátis
+- SSL/TLS: Grátis
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+DNS não resolve:
+→ Aguardar propagação (5-30 min)
+→ Verificar em: https://dnschecker.org/
+
+Worker 404:
+→ Verificar se rotas customizadas foram configuradas
+→ Re-deploy worker após adicionar [[routes]]
+
+502 Bad Gateway:
+→ Verificar se VPS está acessível
+→ Verificar BACKEND_URL no api-gateway
+
+401 Unauthorized:
+→ Verificar API_SECRET no trigger
+→ Verificar HMAC_SECRET no webhook
+
+Orchestrator não consome:
+→ Verificar MODE=cloudflare no .env
+→ Verificar CF_API_TOKEN
+→ Ver logs: docker logs -f atlasreg-orchestrator
+
+================================================================================
+SEGURANÇA
+================================================================================
+
+✓ Senhas aleatórias seguras (48-64 caracteres)
+✓ HMAC-SHA256 para webhooks
+✓ Bearer token authentication
+✓ SSL/TLS automático (Cloudflare)
+✓ Proxy Cloudflare (DDoS protection)
+
+⚠️  IMPORTANTE:
+- Não commitar SENHAS_GERADAS.txt no git
+- Não compartilhar credenciais
+- Rotacionar senhas periodicamente
+
+================================================================================
+PRÓXIMOS PASSOS (Opcional)
+================================================================================
+
+☐ Configurar cron triggers
+☐ Habilitar rate limiting
+☐ Configurar Cloudflare Analytics
+☐ Adicionar custom domain SSL certificate
+☐ Configurar WAF rules
+☐ Setup monitoring/alerting
+☐ Configurar backup automático
+
+================================================================================
+Powered by: ness.
+Domínio: atlasREG.ness.tec.br
+Status: ✓ Pronto para deploy!
+================================================================================
+

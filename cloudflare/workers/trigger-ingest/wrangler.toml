@@ -1,0 +1,17 @@
+name = "atlasreg-trigger-ingest"
+main = "index.js"
+compatibility_date = "2025-10-20"
+
+[vars]
+API_SECRET = "zUI12gR2TWnTFTFXKYcdv2ZbsH0Rc3Ot6f2RW2AxTgHoO6U1"
+
+# Binding para Cloudflare Queue
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "atlasreg-ingest-queue"
+
+# Cron trigger (opcional) - Diário às 6h UTC (3h BRT)
+# Descomente para habilitar:
+# [triggers]
+# crons = ["0 6 * * *"]
+

@@ -1,0 +1,2 @@
+"""AtlasReg Cursor - Config"""
+

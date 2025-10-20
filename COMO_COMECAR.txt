@@ -1,0 +1,382 @@
+================================================================================
+                    ATLASREG - COMO COMEÇAR A USAR
+                         Guia Rápido e Prático
+================================================================================
+
+Data: 20 de Outubro de 2025
+Powered by: ness.
+
+================================================================================
+STATUS: SISTEMA OPERACIONAL ✓
+================================================================================
+
+✓ 11 containers rodando
+✓ Orchestrator pronto para receber mensagens
+✓ AtlasReg Core disponível
+✓ Frontend acessível em http://localhost:3100
+
+================================================================================
+1. TESTE RÁPIDO: ENVIAR MENSAGEM PARA O ORCHESTRATOR
+================================================================================
+
+O orchestrator aguarda mensagens na fila Redis. Vamos enviar uma mensagem
+de teste para ver ele processando:
+
+PASSO 1: Enviar mensagem de teste
+----------------------------------
+$ docker exec atlasreg-redis redis-cli -n 2 RPUSH orchestrator:queue:ingest-queue \
+  '{"type":"start_daily_ingest","date":"2025-10-20","run_id":"test-001"}'
+
+PASSO 2: Ver orchestrator processando
+--------------------------------------
+$ docker logs -f atlasreg-orchestrator
+
+Você verá logs JSON como:
+{"event": "message_received", "type": "start_daily_ingest"}
+{"event": "processing_daily_ingest", "date": "2025-10-20"}
+{"event": "fetching_sources_catalog"}
+...
+
+PASSO 3: Verificar fila
+-----------------------
+$ docker exec atlasreg-redis redis-cli -n 2 LLEN orchestrator:queue:ingest-queue
+
+Resultado: 0 (fila vazia, mensagem foi processada)
+
+================================================================================
+2. ACESSAR INTERFACES WEB
+================================================================================
+
+FRONTEND ATLASREG:
+------------------
+URL: http://localhost:3100
+Descrição: Interface principal do AtlasReg
+Funcionalidades: Dashboard, visualizações, relatórios
+
+AIRFLOW:
+--------
+URL: http://localhost:8300
+Login: admin / admin
+Descrição: Orquestração de workflows
+Funcionalidades: DAGs, tarefas, scheduling
+
+CELERY FLOWER:
+--------------
+URL: http://localhost:5600
+Descrição: Monitor de workers Celery
+Funcionalidades: Ver tasks, workers, filas
+
+MINIO (S3):
+-----------
+URL: http://localhost:9201
+Login: admin / atlasreg2025
+Descrição: Object storage (S3-compatible)
+Funcionalidades: Buckets, upload/download
+
+ELASTICSEARCH:
+--------------
+URL: http://localhost:9300
+Descrição: Search engine
+Funcionalidades: Índices, queries
+
+================================================================================
+3. TESTAR PIPELINE COMPLETO
+================================================================================
+
+CENÁRIO: Coletar notícias de uma fonte específica
+
+PASSO 1: Criar configuração de fonte
+-------------------------------------
+$ cat > /tmp/test_source.json << 'EOF'
+{
+  "source_id": "test-source-001",
+  "nome": "Portal Teste",
+  "url_feed": "https://example.com/rss",
+  "handler_id": "SCRAPY_RSS_GENERIC",
+  "ativo": true,
+  "player_id": null
+}
+EOF
+
+PASSO 2: Enviar mensagem com fonte específica
+---------------------------------------------
+$ docker exec atlasreg-redis redis-cli -n 2 RPUSH orchestrator:queue:ingest-queue \
+  '{"type":"start_daily_ingest","date":"2025-10-20","sources":[{"source_id":"test-001","url":"https://example.com/rss","handler":"SCRAPY_RSS_GENERIC"}]}'
+
+PASSO 3: Acompanhar processamento
+----------------------------------
+$ docker logs -f atlasreg-orchestrator
+
+PASSO 4: Verificar resultado
+-----------------------------
+Logs mostrarão:
+- Fonte identificada
+- Scraper acionado
+- Dados coletados
+- Processamento IA
+- Indexação
+- Publicação
+
+================================================================================
+4. MODO DESENVOLVIMENTO: TESTE LOCAL
+================================================================================
+
+Para testar sem Cloudflare (modo standalone - já ativo):
+
+CONFIGURAÇÃO ATUAL (.env):
+--------------------------
+MODE=standalone
+REDIS_URL=redis://redis:6379/2
+LOG_LEVEL=INFO
+
+COMO FUNCIONA:
+--------------
+1. Orchestrator lê da fila Redis (db 2)
+2. Processa localmente
+3. Salva no MinIO local
+4. Indexa no Elasticsearch local
+
+PARA ADICIONAR MENSAGENS:
+--------------------------
+# Ingest diário completo
+docker exec atlasreg-redis redis-cli -n 2 RPUSH orchestrator:queue:ingest-queue \
+  '{"type":"start_daily_ingest","date":"2025-10-20"}'
+
+# Reprocessar data específica
+docker exec atlasreg-redis redis-cli -n 2 RPUSH orchestrator:queue:ingest-queue \
+  '{"type":"reprocess","date":"2025-10-15"}'
+
+================================================================================
+5. COMANDOS ESSENCIAIS
+================================================================================
+
+VER STATUS:
+-----------
+$ docker ps | grep atlasreg
+
+RESTART ORCHESTRATOR:
+--------------------
+$ docker-compose restart orchestrator
+
+VER LOGS EM TEMPO REAL:
+-----------------------
+$ docker logs -f atlasreg-orchestrator
+
+VERIFICAR SAÚDE:
+---------------
+$ docker inspect atlasreg-orchestrator | grep -A 5 Health
+
+PARAR TUDO:
+-----------
+$ docker-compose stop
+
+INICIAR TUDO:
+-------------
+$ docker-compose up -d
+
+REBUILD ORCHESTRATOR:
+--------------------
+$ docker-compose build orchestrator --no-cache
+$ docker-compose up -d orchestrator
+
+================================================================================
+6. ESTRUTURA DE MENSAGENS
+================================================================================
+
+TIPO 1: start_daily_ingest
+---------------------------
+Descrição: Inicia coleta diária de todas as fontes ativas
+Formato:
+{
+  "type": "start_daily_ingest",
+  "date": "YYYY-MM-DD",
+  "run_id": "opcional-id-unico"
+}
+
+Exemplo:
+{
+  "type": "start_daily_ingest",
+  "date": "2025-10-20",
+  "run_id": "daily-20251020-001"
+}
+
+TIPO 2: reprocess
+-----------------
+Descrição: Reprocessa dados de uma data específica
+Formato:
+{
+  "type": "reprocess",
+  "date": "YYYY-MM-DD",
+  "force": true
+}
+
+Exemplo:
+{
+  "type": "reprocess",
+  "date": "2025-10-15",
+  "force": true
+}
+
+TIPO 3: custom (futuro)
+-----------------------
+Para tasks customizadas:
+{
+  "type": "custom",
+  "task": "nome_da_task",
+  "params": {...}
+}
+
+================================================================================
+7. MONITORAMENTO E DEBUG
+================================================================================
+
+VER LOGS ESTRUTURADOS:
+---------------------
+$ docker logs atlasreg-orchestrator | jq '.'
+
+FILTRAR APENAS ERROS:
+--------------------
+$ docker logs atlasreg-orchestrator | jq 'select(.level=="error")'
+
+VER EVENTOS ESPECÍFICOS:
+------------------------
+$ docker logs atlasreg-orchestrator | jq 'select(.event=="message_received")'
+
+VERIFICAR FILA REDIS:
+--------------------
+# Ver tamanho da fila
+$ docker exec atlasreg-redis redis-cli -n 2 LLEN orchestrator:queue:ingest-queue
+
+# Ver próxima mensagem (sem remover)
+$ docker exec atlasreg-redis redis-cli -n 2 LINDEX orchestrator:queue:ingest-queue 0
+
+# Limpar fila
+$ docker exec atlasreg-redis redis-cli -n 2 DEL orchestrator:queue:ingest-queue
+
+VERIFICAR MEMÓRIA/CPU:
+---------------------
+$ docker stats atlasreg-orchestrator --no-stream
+
+================================================================================
+8. PRÓXIMOS PASSOS
+================================================================================
+
+CURTO PRAZO (Desenvolvimento):
+-------------------------------
+☐ Implementar tasks Celery para scrapers
+☐ Habilitar Airflow API (auth + endpoints)
+☐ Criar DAGs dinâmicos por fonte
+☐ Testar com scrapers reais (CVM, G1, etc)
+☐ Implementar pipeline IA completo
+☐ Gerar JSON Gold
+
+MÉDIO PRAZO (Integração):
+--------------------------
+☐ Criar conta Cloudflare
+☐ Provisionar Queue, KV, R2
+☐ Criar Workers (trigger + receiver)
+☐ Configurar webhooks HMAC
+☐ Deploy em VPS de produção
+☐ Trocar MODE=cloudflare
+
+LONGO PRAZO (Produção):
+-----------------------
+☐ Monitoramento avançado (Grafana)
+☐ Alertas automáticos
+☐ Backup automático
+☐ Scaling horizontal
+☐ CI/CD pipeline
+
+================================================================================
+9. TROUBLESHOOTING
+================================================================================
+
+PROBLEMA: Orchestrator não processa mensagens
+SOLUÇÃO:
+1. Verificar se está rodando: docker ps | grep orchestrator
+2. Ver logs: docker logs atlasreg-orchestrator
+3. Verificar fila: docker exec atlasreg-redis redis-cli -n 2 LLEN orchestrator:queue:ingest-queue
+4. Restart: docker-compose restart orchestrator
+
+PROBLEMA: Redis connection error
+SOLUÇÃO:
+1. Verificar Redis: docker ps | grep redis
+2. Testar conexão: docker exec atlasreg-redis redis-cli ping
+3. Verificar porta: netstat -tulpn | grep 6382
+4. Restart Redis: docker-compose restart redis
+
+PROBLEMA: Não encontra scrapers
+SOLUÇÃO:
+1. Verificar volume: docker inspect atlasreg-orchestrator | grep Mounts
+2. Verificar path: docker exec atlasreg-orchestrator ls -la /app/scrapers
+3. Rebuild: docker-compose build orchestrator
+
+PROBLEMA: Airflow API não responde
+SOLUÇÃO:
+1. Verificar Airflow: docker ps | grep airflow-webserver
+2. Acessar UI: http://localhost:8300
+3. Habilitar API no airflow.cfg
+4. Restart: docker-compose restart airflow-webserver
+
+================================================================================
+10. EXEMPLO COMPLETO: TESTE END-TO-END
+================================================================================
+
+OBJETIVO: Enviar mensagem, processar e verificar resultado
+
+# 1. Verificar sistema
+docker ps | grep atlasreg
+
+# 2. Limpar fila (começar do zero)
+docker exec atlasreg-redis redis-cli -n 2 DEL orchestrator:queue:ingest-queue
+
+# 3. Enviar mensagem de teste
+docker exec atlasreg-redis redis-cli -n 2 RPUSH orchestrator:queue:ingest-queue \
+  '{"type":"start_daily_ingest","date":"2025-10-20","run_id":"test-e2e-001"}'
+
+# 4. Confirmar mensagem na fila
+docker exec atlasreg-redis redis-cli -n 2 LLEN orchestrator:queue:ingest-queue
+# Deve retornar: 1
+
+# 5. Acompanhar processamento
+docker logs -f atlasreg-orchestrator
+
+# 6. Aguardar ~30 segundos (poll interval)
+
+# 7. Verificar fila novamente (deve estar vazia)
+docker exec atlasreg-redis redis-cli -n 2 LLEN orchestrator:queue:ingest-queue
+# Deve retornar: 0
+
+# 8. Ver logs completos
+docker logs atlasreg-orchestrator | jq 'select(.run_id=="test-e2e-001")'
+
+PRONTO! Mensagem processada com sucesso.
+
+================================================================================
+RESUMO: ESTÁ TUDO PRONTO PARA COMEÇAR!
+================================================================================
+
+✓ Sistema operacional (11 containers)
+✓ Orchestrator aguardando mensagens
+✓ Interfaces web disponíveis
+✓ Comandos de teste prontos
+
+COMECE AGORA:
+-------------
+
+1. Teste rápido (1 min):
+   docker logs -f atlasreg-orchestrator
+
+2. Enviar mensagem (1 min):
+   docker exec atlasreg-redis redis-cli -n 2 RPUSH orchestrator:queue:ingest-queue \
+     '{"type":"start_daily_ingest","date":"2025-10-20"}'
+
+3. Acessar frontend (navegador):
+   http://localhost:3100
+
+BOA SORTE! 🚀
+
+================================================================================
+Powered by: ness.
+================================================================================
+

@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar requirements
+COPY apps/scraper/requirements.txt .
+
+# Instalar dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código
+COPY apps/scraper /app
+
+# Criar diretório para models
+RUN mkdir -p /app/models
+
+# Celery worker
+CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info"]
+

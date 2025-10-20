@@ -1,0 +1,33 @@
+schema: 1
+story: 'Phase 1.1 - Scraper Validation & Refinement'
+gate: CONCERNS
+status_reason: 'Base sólida implementada (50%), mas scrapers requerem ajustes finais e integração IA pendente.'
+reviewer: 'BMad Master + Developer'
+updated: '2025-10-18T00:00:00Z'
+top_issues:
+  - id: 'TEST-001'
+    severity: high
+    finding: 'Apenas 2/11 scrapers validados com sucesso - 9 falharam por selectors CSS incorretos ou URLs 404'
+    suggested_action: 'Completar Epic 1.1: ajustar selectors restantes, implementar Playwright para sites gov.br, validar todas as 10 fontes'
+  - id: 'ARCH-001'
+    severity: medium
+    finding: 'Pipeline IA implementado mas não integrado - BERTimbau e spaCy não conectados ao fluxo de scraping'
+    suggested_action: 'Implementar Epic 1.2: Celery tasks, integração end-to-end scraper→IA→events'
+  - id: 'TEST-002'
+    severity: medium
+    finding: 'Backend API routes são placeholders - não retornam dados reais'
+    suggested_action: 'Implementar Epic 2.1: lógica de busca/filtros em GET /events/search e demais routes'
+  - id: 'ARCH-002'
+    severity: medium
+    finding: 'Frontend não conectado ao backend - auth e dashboards não funcionam end-to-end'
+    suggested_action: 'Implementar Epic 3.1: conectar auth, TanStack Query, estado global'
+  - id: 'REL-001'
+    severity: low
+    finding: 'Airflow não está rodando - DAGs não podem ser testados'
+    suggested_action: 'Implementar Epic 1.3: adicionar Airflow ao docker-compose, carregar DAGs dinamicamente'
+  - id: 'TEST-003'
+    severity: low
+    finding: 'Sem testes automatizados - zero coverage'
+    suggested_action: 'Adicionar testes unitários (backend), E2E (frontend), integração (scrapers) conforme Epic 6.1'
+waiver: { active: false }
+

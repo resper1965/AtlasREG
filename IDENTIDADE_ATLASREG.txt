@@ -1,0 +1,68 @@
+================================================================================
+                        ATLASREG - IDENTIDADE
+                   Projeto Independente e Isolado
+================================================================================
+
+NOME DO PROJETO:
+----------------
+AtlasReg (ou AtlasREG)
+
+DESCRIÇÃO:
+----------
+Sistema de monitoramento regulatório com IA para coleta, processamento
+e análise de notícias e documentos de órgãos reguladores brasileiros.
+
+COMPONENTES:
+------------
+- Frontend: Next.js (Dashboards e visualizações)
+- Backend: FastAPI (API REST)
+- Orchestrator: Python (Integração Cloudflare)
+- Scrapers: Scrapy + Playwright (Coleta de dados)
+- IA/ML: BERTimbau + SBERT + FAISS (Classificação e busca)
+- Orquestração: Airflow + Celery (Workflows)
+- Dados: PostgreSQL + Redis + MinIO + Elasticsearch
+
+CONTAINERS (11):
+----------------
+Todos com prefixo "atlasreg-":
+1. atlasreg-orchestrator
+2. atlasreg-web
+3. atlasreg-api
+4. atlasreg-redis
+5. atlasreg-minio
+6. atlasreg-elasticsearch
+7. atlasreg-airflow-webserver
+8. atlasreg-airflow-scheduler
+9. atlasreg-celery-worker
+10. atlasreg-celery-beat
+11. atlasreg-celery-flower
+
+NETWORK:
+--------
+atlasreg_atlasreg-network (exclusiva)
+
+VOLUMES:
+--------
+Todos com prefixo "atlasreg_"
+
+PORTAS:
+-------
+3100, 5600, 6382, 8200, 8300, 9200, 9201, 9300
+
+LOCALIZAÇÃO:
+------------
+/home/resper/nSaulo
+
+ISOLAMENTO:
+-----------
+100% SEGREGADO - Nenhuma dependência ou interferência com outros projetos.
+
+OUTROS PROJETOS NO SERVIDOR (NÃO RELACIONADOS):
+------------------------------------------------
+- privacy-dataset-frontend
+- app-admin-dashboard
+- app-backend
+
+ESTES NÃO FAZEM PARTE DO ATLASREG!
+
+================================================================================

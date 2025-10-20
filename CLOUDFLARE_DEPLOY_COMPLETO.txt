@@ -1,0 +1,667 @@
+================================================================================
+              ATLASREG - BUILD E DEPLOY NO CLOUDFLARE
+                    Guia Completo Passo a Passo
+================================================================================
+
+Data: 20 de Outubro de 2025
+Powered by: ness.
+
+================================================================================
+ARQUITETURA HÍBRIDA: CLOUDFLARE + VPS
+================================================================================
+
+O que VAI para CLOUDFLARE:
+---------------------------
+✓ Frontend estático (Cloudflare Pages)
+✓ API/Routing Workers (Cloudflare Workers)
+✓ Queue (Cloudflare Queue)
+✓ Config (Cloudflare KV)
+✓ Storage (Cloudflare R2)
+
+O que FICA no VPS:
+------------------
+✓ Orchestrator (Python 24/7)
+✓ AtlasReg Core (Airflow, Celery, Scrapers, IA)
+✓ Bancos de dados (PostgreSQL, Redis, Elasticsearch)
+
+POR QUE HÍBRIDO?
+----------------
+- Cloudflare Workers: Limite de 30 segundos (execução curta)
+- Orchestrator: Roda 24/7, processa por horas (execução longa)
+- Solução: Edge na Cloudflare, Processing no VPS
+
+================================================================================
+PARTE 1: DEPLOY FRONTEND NA CLOUDFLARE PAGES
+================================================================================
+
+OPÇÃO A: Via CLI Wrangler
+--------------------------
+
+# 1. Instalar Wrangler
+npm install -g wrangler
+
+# 2. Autenticar
+wrangler login
+
+# 3. Build do frontend
+cd /home/resper/nSaulo/apps/web
+npm run build
+
+# 4. Deploy
+npx wrangler pages deploy .next --project-name=atlasreg-frontend
+
+OPÇÃO B: Via GitHub (Recomendado)
+----------------------------------
+
+1. Criar repositório Git:
+   cd /home/resper/nSaulo
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin https://github.com/SEU_USER/atlasreg.git
+   git push -u origin main
+
+2. Cloudflare Dashboard:
+   - Ir em Pages → Create a project
+   - Connect to Git → Selecionar repositório
+   - Build settings:
+     * Framework: Next.js
+     * Build command: cd apps/web && npm run build
+     * Build output: apps/web/.next
+   - Deploy
+
+3. Configurar variáveis:
+   - Settings → Environment variables
+   - NEXT_PUBLIC_API_URL=https://api.atlasreg.workers.dev
+
+OPÇÃO C: Via Cloudflare Dashboard (Manual)
+-------------------------------------------
+
+1. Build local:
+   cd /home/resper/nSaulo/apps/web
+   npm run build
+
+2. Cloudflare Dashboard:
+   - Pages → Create a project
+   - Upload assets → Selecionar pasta .next
+   - Deploy
+
+RESULTADO:
+----------
+Frontend disponível em: https://atlasreg-frontend.pages.dev
+
+================================================================================
+PARTE 2: CRIAR CLOUDFLARE WORKERS (API/Routing)
+================================================================================
+
+WORKER 1: API Gateway
+----------------------
+
+# 1. Criar diretório
+mkdir -p /home/resper/nSaulo/cloudflare/workers/api-gateway
+
+# 2. Criar worker
+cat > /home/resper/nSaulo/cloudflare/workers/api-gateway/index.js << 'EOF'
+/**
+ * AtlasReg API Gateway Worker
+ * Roteia requests para backend FastAPI no VPS
+ */
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    
+    // CORS headers
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    };
+
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    // Proxy para backend FastAPI no VPS
+    const backendUrl = `${env.BACKEND_URL}${url.pathname}${url.search}`;
+    
+    try {
+      const response = await fetch(backendUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      });
+
+      const responseBody = await response.text();
+      
+      return new Response(responseBody, {
+        status: response.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  },
+};
+EOF
+
+# 3. Criar wrangler.toml
+cat > /home/resper/nSaulo/cloudflare/workers/api-gateway/wrangler.toml << 'EOF'
+name = "atlasreg-api-gateway"
+main = "index.js"
+compatibility_date = "2025-10-20"
+
+[vars]
+BACKEND_URL = "https://SEU_VPS_IP:8200"
+
+[[routes]]
+pattern = "api.atlasreg.workers.dev/*"
+EOF
+
+# 4. Deploy
+cd /home/resper/nSaulo/cloudflare/workers/api-gateway
+wrangler deploy
+
+RESULTADO:
+----------
+API Gateway em: https://api.atlasreg.workers.dev
+
+WORKER 2: Trigger Ingest (Envia para Queue)
+--------------------------------------------
+
+cat > /home/resper/nSaulo/cloudflare/workers/trigger-ingest/index.js << 'EOF'
+/**
+ * AtlasReg Trigger Ingest Worker
+ * Recebe requests e envia para Cloudflare Queue
+ */
+
+export default {
+  async fetch(request, env) {
+    // Validar auth (opcional)
+    const authHeader = request.headers.get('Authorization');
+    if (authHeader !== `Bearer ${env.API_SECRET}`) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
+    try {
+      const body = await request.json();
+      
+      // Enviar para Cloudflare Queue
+      await env.INGEST_QUEUE.send({
+        type: body.type || 'start_daily_ingest',
+        date: body.date || new Date().toISOString().split('T')[0],
+        run_id: body.run_id || `run-${Date.now()}`,
+        timestamp: Date.now(),
+      });
+
+      return new Response(JSON.stringify({
+        status: 'queued',
+        message: 'Ingest triggered successfully',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  },
+
+  // Cron trigger (diário às 6h)
+  async scheduled(event, env, ctx) {
+    await env.INGEST_QUEUE.send({
+      type: 'start_daily_ingest',
+      date: new Date().toISOString().split('T')[0],
+      run_id: `daily-${Date.now()}`,
+      timestamp: Date.now(),
+    });
+  },
+};
+EOF
+
+cat > /home/resper/nSaulo/cloudflare/workers/trigger-ingest/wrangler.toml << 'EOF'
+name = "atlasreg-trigger-ingest"
+main = "index.js"
+compatibility_date = "2025-10-20"
+
+[vars]
+API_SECRET = "your-secret-key-here"
+
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "atlasreg-ingest-queue"
+
+[triggers]
+crons = ["0 6 * * *"]
+EOF
+
+WORKER 3: Webhook Receiver (Recebe notificações do Orchestrator)
+-----------------------------------------------------------------
+
+cat > /home/resper/nSaulo/cloudflare/workers/webhook-receiver/index.js << 'EOF'
+/**
+ * AtlasReg Webhook Receiver
+ * Recebe notificações do Orchestrator após processamento
+ */
+
+import crypto from 'crypto';
+
+export default {
+  async fetch(request, env) {
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 });
+    }
+
+    try {
+      const body = await request.text();
+      const signature = request.headers.get('X-Signature');
+      
+      // Validar HMAC signature
+      const expectedSignature = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(env.HMAC_SECRET + body)
+      );
+      
+      const expectedHex = Array.from(new Uint8Array(expectedSignature))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      
+      if (signature !== expectedHex) {
+        return new Response('Invalid signature', { status: 401 });
+      }
+
+      const data = JSON.parse(body);
+      
+      // Processar notificação
+      console.log('Ingest completed:', data);
+      
+      // Aqui você pode:
+      // - Atualizar KV com status
+      // - Enviar notificação
+      // - Trigger outro processo
+      
+      await env.STATUS_KV.put(
+        `ingest:${data.run_id}`,
+        JSON.stringify({
+          status: data.status,
+          timestamp: data.timestamp,
+          files_generated: data.files_generated,
+        }),
+        { expirationTtl: 86400 } // 24h
+      );
+
+      return new Response(JSON.stringify({ received: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  },
+};
+EOF
+
+cat > /home/resper/nSaulo/cloudflare/workers/webhook-receiver/wrangler.toml << 'EOF'
+name = "atlasreg-webhook-receiver"
+main = "index.js"
+compatibility_date = "2025-10-20"
+
+[vars]
+HMAC_SECRET = "your-hmac-secret-here"
+
+[[kv_namespaces]]
+binding = "STATUS_KV"
+id = "SEU_KV_NAMESPACE_ID"
+EOF
+
+DEPLOY TODOS OS WORKERS:
+------------------------
+cd /home/resper/nSaulo/cloudflare/workers/api-gateway && wrangler deploy
+cd /home/resper/nSaulo/cloudflare/workers/trigger-ingest && wrangler deploy
+cd /home/resper/nSaulo/cloudflare/workers/webhook-receiver && wrangler deploy
+
+================================================================================
+PARTE 3: CRIAR CLOUDFLARE QUEUE
+================================================================================
+
+VIA CLI:
+--------
+# Criar Queue
+wrangler queues create atlasreg-ingest-queue
+
+# Listar queues
+wrangler queues list
+
+VIA DASHBOARD:
+--------------
+1. Cloudflare Dashboard → Queues
+2. Create queue
+3. Nome: atlasreg-ingest-queue
+4. Create
+
+CONFIGURAR CONSUMER:
+--------------------
+O Orchestrator no VPS vai consumir esta queue via API.
+Não precisa configurar consumer na Cloudflare.
+
+================================================================================
+PARTE 4: CRIAR CLOUDFLARE KV
+================================================================================
+
+VIA CLI:
+--------
+# Criar KV namespace
+wrangler kv:namespace create "ATLASREG_CONFIG"
+
+# Listar namespaces
+wrangler kv:namespace list
+
+# Adicionar configuração
+wrangler kv:key put \
+  --namespace-id="SEU_NAMESPACE_ID" \
+  "NEWS_WATCHLIST_CONFIG" \
+  --path=/home/resper/nSaulo/apps/orchestrator/config/news_watchlist_config.json
+
+VIA DASHBOARD:
+--------------
+1. Cloudflare Dashboard → KV
+2. Create namespace: "atlasreg-config"
+3. Add entry:
+   - Key: NEWS_WATCHLIST_CONFIG
+   - Value: (copiar JSON de news_watchlist_config.json)
+
+EXEMPLO DE CONFIGURAÇÃO:
+------------------------
+{
+  "sources": [
+    {
+      "source_id": "cvm-news",
+      "nome": "CVM - Notícias",
+      "url_feed": "https://www.gov.br/cvm/pt-br/assuntos/noticias",
+      "handler_id": "SCRAPY_CVM_NEWS",
+      "ativo": true,
+      "frequencia_horas": 24
+    },
+    {
+      "source_id": "bcb-comunicados",
+      "nome": "Banco Central - Comunicados",
+      "url_feed": "https://www.bcb.gov.br/estabilidadefinanceira/comunicados",
+      "handler_id": "SCRAPY_BCB_COMUNICADOS",
+      "ativo": true,
+      "frequencia_horas": 12
+    }
+  ],
+  "global_settings": {
+    "max_concurrent_scrapers": 5,
+    "retry_attempts": 3,
+    "timeout_seconds": 300
+  }
+}
+
+================================================================================
+PARTE 5: CRIAR CLOUDFLARE R2
+================================================================================
+
+VIA CLI:
+--------
+# Criar bucket
+wrangler r2 bucket create atlasreg-gold
+
+# Listar buckets
+wrangler r2 bucket list
+
+VIA DASHBOARD:
+--------------
+1. Cloudflare Dashboard → R2
+2. Create bucket
+3. Nome: atlasreg-gold
+4. Create
+
+GERAR ACCESS KEY:
+-----------------
+1. R2 → Manage R2 API Tokens
+2. Create API token
+3. Escolher permissions: Read & Write
+4. Create
+5. Copiar:
+   - Access Key ID
+   - Secret Access Key
+   - Endpoint URL
+
+CONFIGURAR NO ORCHESTRATOR:
+---------------------------
+No .env do servidor VPS:
+
+R2_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+R2_ACCESS_KEY=<seu_access_key>
+R2_SECRET_KEY=<seu_secret_key>
+R2_BUCKET=atlasreg-gold
+
+================================================================================
+PARTE 6: CONFIGURAR ORCHESTRATOR NO VPS (Consumer)
+================================================================================
+
+ATUALIZAR .ENV:
+---------------
+cd /home/resper/nSaulo
+
+cat >> .env << 'EOF'
+
+# Cloudflare Configuration
+MODE=cloudflare
+CF_API_TOKEN=<seu_cloudflare_api_token>
+CF_ACCOUNT_ID=<seu_account_id>
+CF_QUEUE_NAME=atlasreg-ingest-queue
+CF_KV_NAMESPACE_ID=<seu_kv_namespace_id>
+
+# R2 Storage
+R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+R2_ACCESS_KEY=<seu_r2_access_key>
+R2_SECRET_KEY=<seu_r2_secret_key>
+R2_BUCKET=atlasreg-gold
+
+# Webhook
+HOOK_ENDPOINT=https://atlasreg-webhook-receiver.workers.dev/hooks/ingest-complete
+HOOK_HMAC_SECRET=<seu_hmac_secret>
+EOF
+
+RESTART ORCHESTRATOR:
+--------------------
+docker-compose restart orchestrator
+
+VERIFICAR LOGS:
+---------------
+docker logs -f atlasreg-orchestrator
+
+Deve mostrar:
+{"event": "queue_consumer_mode_cloudflare"}
+{"event": "connecting_to_cloudflare_queue"}
+
+================================================================================
+PARTE 7: OBTER CREDENCIAIS CLOUDFLARE
+================================================================================
+
+API TOKEN:
+----------
+1. Cloudflare Dashboard → My Profile → API Tokens
+2. Create Token
+3. Use template: "Edit Cloudflare Workers"
+4. Adicionar permissions:
+   - Account.Queues: Edit
+   - Account.Workers KV Storage: Edit
+   - Account.R2: Edit
+5. Create Token
+6. Copiar token
+
+ACCOUNT ID:
+-----------
+1. Cloudflare Dashboard → Overview
+2. Account ID está no sidebar direito
+3. Copiar
+
+NAMESPACE IDS:
+--------------
+# KV Namespace
+wrangler kv:namespace list
+
+# Queue
+Cloudflare Dashboard → Queues → atlasreg-ingest-queue → Settings
+
+# R2
+Não precisa de ID, apenas bucket name
+
+================================================================================
+PARTE 8: TESTE END-TO-END
+================================================================================
+
+FLUXO COMPLETO:
+---------------
+
+1. Trigger via Worker:
+   curl -X POST https://atlasreg-trigger-ingest.workers.dev/trigger \
+     -H "Authorization: Bearer your-secret-key" \
+     -H "Content-Type: application/json" \
+     -d '{"type":"start_daily_ingest","date":"2025-10-20"}'
+
+2. Worker envia para Cloudflare Queue
+
+3. Orchestrator no VPS consome da Queue:
+   docker logs -f atlasreg-orchestrator
+   # Deve mostrar: {"event": "message_received"}
+
+4. Orchestrator processa (Airflow/Celery)
+
+5. Resultados salvos no R2:
+   wrangler r2 object list atlasreg-gold
+
+6. Orchestrator notifica Webhook Worker:
+   # Webhook recebe confirmação
+
+7. Status atualizado no KV:
+   wrangler kv:key get "ingest:run-id" --namespace-id="SEU_ID"
+
+PRONTO! Pipeline completo funcionando!
+
+================================================================================
+PARTE 9: ESTRUTURA FINAL DE PASTAS
+================================================================================
+
+/home/resper/nSaulo/
+├── apps/
+│   ├── web/                      (Frontend - Deploy Cloudflare Pages)
+│   ├── api/                      (Backend - Fica no VPS)
+│   ├── orchestrator/             (Orchestrator - Fica no VPS)
+│   ├── scraper/                  (Scrapers - Fica no VPS)
+│   └── airflow/                  (Airflow - Fica no VPS)
+├── cloudflare/
+│   └── workers/
+│       ├── api-gateway/          (Deploy Cloudflare Workers)
+│       ├── trigger-ingest/       (Deploy Cloudflare Workers)
+│       └── webhook-receiver/     (Deploy Cloudflare Workers)
+├── docker-compose.yml            (VPS only)
+└── .env                          (Configuração VPS + Cloudflare)
+
+================================================================================
+PARTE 10: CUSTOS CLOUDFLARE (Estimativa)
+================================================================================
+
+FREE TIER:
+----------
+✓ Workers: 100.000 requests/dia
+✓ Queue: 1.000.000 mensagens/mês
+✓ KV: 100.000 reads/dia, 1.000 writes/dia
+✓ R2: 10GB storage grátis
+✓ Pages: Unlimited requests
+
+PAID (se necessário):
+--------------------
+- Workers: $0.15/milhão requests extras
+- Queue: $0.40/milhão mensagens extras
+- KV: $0.50/milhão reads extras
+- R2: $0.015/GB/mês storage extra
+
+ESTIMATIVA ATLASREG:
+--------------------
+Uso moderado (100 scrapers/dia):
+- Workers: ~50k requests/mês → FREE
+- Queue: ~3k mensagens/mês → FREE
+- KV: ~10k reads/mês → FREE
+- R2: ~5GB/mês → FREE
+
+TOTAL MENSAL: $0 (FREE TIER) 🎉
+
+================================================================================
+RESUMO: CHECKLIST DE DEPLOY
+================================================================================
+
+CLOUDFLARE:
+-----------
+☐ 1. Criar conta Cloudflare (se não tiver)
+☐ 2. Obter API Token
+☐ 3. Criar Cloudflare Queue (atlasreg-ingest-queue)
+☐ 4. Criar Cloudflare KV namespace (atlasreg-config)
+☐ 5. Criar Cloudflare R2 bucket (atlasreg-gold)
+☐ 6. Deploy Workers (api-gateway, trigger-ingest, webhook-receiver)
+☐ 7. Deploy Frontend (Cloudflare Pages)
+☐ 8. Configurar variáveis de ambiente nos Workers
+
+VPS:
+----
+☐ 9. Atualizar .env com credenciais Cloudflare
+☐ 10. Trocar MODE=cloudflare
+☐ 11. Restart Orchestrator
+☐ 12. Verificar logs (conexão CF Queue)
+
+TESTE:
+------
+☐ 13. Trigger manual via Worker
+☐ 14. Verificar processamento no Orchestrator
+☐ 15. Confirmar upload R2
+☐ 16. Verificar webhook recebido
+☐ 17. Checar status no KV
+
+PRONTO! Sistema em produção na Cloudflare Edge + VPS!
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ERRO: "Failed to connect to Cloudflare Queue"
+SOLUÇÃO: Verificar CF_API_TOKEN e CF_ACCOUNT_ID no .env
+
+ERRO: "Queue not found"
+SOLUÇÃO: Criar queue: wrangler queues create atlasreg-ingest-queue
+
+ERRO: "R2 upload failed"
+SOLUÇÃO: Verificar R2_ACCESS_KEY e R2_SECRET_KEY
+
+ERRO: "Webhook signature invalid"
+SOLUÇÃO: Verificar HOOK_HMAC_SECRET (deve ser igual no Orchestrator e Worker)
+
+ERRO: "Worker timeout"
+SOLUÇÃO: Workers têm limite de 30s. Processos longos devem ir para VPS.
+
+================================================================================
+PRÓXIMOS PASSOS
+================================================================================
+
+1. ✓ Criar estrutura Cloudflare Workers (código pronto acima)
+2. → Obter credenciais Cloudflare
+3. → Deploy Workers
+4. → Configurar Orchestrator modo cloudflare
+5. → Testar pipeline completo
+6. → Monitorar e otimizar
+
+================================================================================
+POWERED BY: ness. - AtlasReg na Cloudflare Edge!
+================================================================================
+

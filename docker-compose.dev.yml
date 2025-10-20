@@ -1,0 +1,79 @@
+version: '3.8'
+
+name: atlasreg-dev
+
+services:
+  # ==========================================
+  # DATABASES & STORAGE (Prontos para usar)
+  # ==========================================
+  
+  redis:
+    image: redis:7-alpine
+    container_name: atlasreg-redis
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - atlasreg-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: atlasreg-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-atlasreg2025}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - atlasreg-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: atlasreg-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=atlasreg-cluster
+    ports:
+      - "19200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - atlasreg-network
+
+volumes:
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  es_data:
+    driver: local
+
+networks:
+  atlasreg-network:
+    driver: bridge
+

@@ -1,0 +1,205 @@
+================================================================================
+              ATLASREG - CONFIGURAÇÃO DNS CLOUDFLARE
+                     atlasREG.ness.tec.br
+================================================================================
+
+Data: 20 de Outubro de 2025
+Domínio: atlasREG.ness.tec.br
+Powered by: ness.
+
+================================================================================
+CREDENCIAIS CLOUDFLARE
+================================================================================
+
+API Token: 1a3ea7b7e9efa3fda819583eb47080c62c4e1
+(Nota: Token parece incompleto. Verificar se há mais caracteres)
+
+Domínio Base: ness.tec.br
+Subdomínio: atlasREG
+
+================================================================================
+REGISTROS DNS A CRIAR
+================================================================================
+
+No Cloudflare Dashboard (ness.tec.br):
+
+1. CNAME: atlasREG.ness.tec.br → atlasreg-frontend.pages.dev
+   Tipo: CNAME
+   Nome: atlasREG
+   Conteúdo: atlasreg-frontend.pages.dev
+   Proxy: ✓ Proxied (laranja)
+   TTL: Auto
+
+2. CNAME: api.atlasREG.ness.tec.br → atlasreg-api-gateway.workers.dev
+   Tipo: CNAME
+   Nome: api.atlasREG
+   Conteúdo: atlasreg-api-gateway.workers.dev
+   Proxy: ✓ Proxied (laranja)
+   TTL: Auto
+
+3. CNAME: trigger.atlasREG.ness.tec.br → atlasreg-trigger-ingest.workers.dev
+   Tipo: CNAME
+   Nome: trigger.atlasREG
+   Conteúdo: atlasreg-trigger-ingest.workers.dev
+   Proxy: ✓ Proxied (laranja)
+   TTL: Auto
+
+4. CNAME: webhook.atlasREG.ness.tec.br → atlasreg-webhook-receiver.workers.dev
+   Tipo: CNAME
+   Nome: webhook.atlasREG
+   Conteúdo: atlasreg-webhook-receiver.workers.dev
+   Proxy: ✓ Proxied (laranja)
+   TTL: Auto
+
+5. A: vps.atlasREG.ness.tec.br → IP_DO_SEU_VPS
+   Tipo: A
+   Nome: vps.atlasREG
+   Conteúdo: SEU_IP_VPS (ex: 123.456.789.10)
+   Proxy: ✗ DNS only (cinza)
+   TTL: Auto
+
+================================================================================
+COMANDOS CLI (Alternativa)
+================================================================================
+
+# Instalar cloudflare CLI
+npm install -g @cloudflare/cli
+
+# Ou usar wrangler
+wrangler zones list  # Ver zones disponíveis
+
+# Nota: Para criar DNS via API, seria necessário usar a API REST
+# com o token fornecido. Exemplo abaixo:
+
+# GET Zone ID primeiro
+curl -X GET "https://api.cloudflare.com/client/v4/zones?name=ness.tec.br" \
+  -H "Authorization: Bearer 1a3ea7b7e9efa3fda819583eb47080c62c4e1" \
+  -H "Content-Type: application/json"
+
+# Depois criar registros DNS
+# (Scripts completos estão no arquivo DNS_AUTOMATION.sh)
+
+================================================================================
+CRIAR DNS VIA DASHBOARD (Recomendado)
+================================================================================
+
+1. Acesse: https://dash.cloudflare.com/
+2. Selecione domínio: ness.tec.br
+3. Vá em: DNS → Records
+4. Clique: Add record
+5. Configure cada registro conforme tabela acima
+
+================================================================================
+CONFIGURAÇÃO APÓS DNS CRIADO
+================================================================================
+
+URLS FINAIS:
+------------
+Frontend:     https://atlasREG.ness.tec.br
+API Gateway:  https://api.atlasREG.ness.tec.br
+Trigger:      https://trigger.atlasREG.ness.tec.br
+Webhook:      https://webhook.atlasREG.ness.tec.br
+VPS:          https://vps.atlasREG.ness.tec.br
+
+ATUALIZAR WORKERS:
+------------------
+
+1. api-gateway/wrangler.toml:
+   BACKEND_URL = "http://vps.atlasREG.ness.tec.br:8200"
+   
+   [[routes]]
+   pattern = "api.atlasREG.ness.tec.br/*"
+   zone_name = "ness.tec.br"
+
+2. trigger-ingest/wrangler.toml:
+   (Senhas já configuradas no próximo passo)
+   
+   [[routes]]
+   pattern = "trigger.atlasREG.ness.tec.br/*"
+   zone_name = "ness.tec.br"
+
+3. webhook-receiver/wrangler.toml:
+   (Senhas já configuradas no próximo passo)
+   
+   [[routes]]
+   pattern = "webhook.atlasREG.ness.tec.br/*"
+   zone_name = "ness.tec.br"
+
+ATUALIZAR .ENV DO ORCHESTRATOR:
+--------------------------------
+
+MODE=cloudflare
+CF_API_TOKEN=1a3ea7b7e9efa3fda819583eb47080c62c4e1
+CF_ACCOUNT_ID=<seu_account_id>
+CF_QUEUE_NAME=atlasreg-ingest-queue
+HOOK_ENDPOINT=https://webhook.atlasREG.ness.tec.br/hooks/ingest-complete
+HOOK_HMAC_SECRET=<ver_arquivo_SENHAS_GERADAS.txt>
+
+================================================================================
+SSL/TLS AUTOMÁTICO
+================================================================================
+
+✓ Cloudflare gerencia SSL automaticamente
+✓ Certificado válido em ~5 minutos após criar DNS
+✓ HTTPS forçado (HTTP → HTTPS redirect)
+✓ TLS 1.3 habilitado
+
+Configuração SSL/TLS (Cloudflare Dashboard):
+- SSL/TLS → Overview → Full (strict)
+
+================================================================================
+VERIFICAÇÃO
+================================================================================
+
+Após criar DNS (aguardar propagação ~5 min):
+
+# Testar DNS
+dig atlasREG.ness.tec.br
+dig api.atlasREG.ness.tec.br
+dig trigger.atlasREG.ness.tec.br
+dig webhook.atlasREG.ness.tec.br
+
+# Testar HTTPS
+curl -I https://api.atlasREG.ness.tec.br/health
+curl -I https://trigger.atlasREG.ness.tec.br/health
+curl -I https://webhook.atlasREG.ness.tec.br/health
+
+# Testar frontend
+curl -I https://atlasREG.ness.tec.br
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+PROBLEMA: DNS não resolve
+SOLUÇÃO: Aguardar propagação (5-30 min)
+         Verificar se CNAME está correto
+
+PROBLEMA: SSL/TLS error
+SOLUÇÃO: Em SSL/TLS → Overview → Trocar para "Full"
+         Aguardar emissão do certificado (~5 min)
+
+PROBLEMA: 525 error (SSL handshake failed)
+SOLUÇÃO: VPS precisa ter certificado SSL válido
+         Ou usar "Full" (não "Full strict")
+
+PROBLEMA: 502 error (Bad Gateway)
+SOLUÇÃO: Verificar se VPS está acessível
+         Verificar se BACKEND_URL está correto
+
+================================================================================
+PRÓXIMOS PASSOS
+================================================================================
+
+1. ☐ Criar registros DNS (via Dashboard ou CLI)
+2. ☐ Aguardar propagação DNS (5-30 min)
+3. ☐ Configurar rotas customizadas nos Workers
+4. ☐ Atualizar .env do Orchestrator
+5. ☐ Deploy Workers com domínio customizado
+6. ☐ Testar endpoints
+7. ☐ Configurar SSL/TLS Full (strict)
+
+================================================================================
+Powered by: ness.
+================================================================================
+

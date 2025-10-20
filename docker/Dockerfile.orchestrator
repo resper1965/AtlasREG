@@ -1,0 +1,41 @@
+# AtlasReg Cursor - Dockerfile
+FROM python:3.11-slim
+
+LABEL maintainer="Ricardo Esper <resper@ness.com.br>"
+LABEL project="AtlasReg Cursor v2.0"
+LABEL company="ness."
+
+# Evitar prompts interativos
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Instalar dependencias do sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Criar diretorio de trabalho
+WORKDIR /app
+
+# Copiar requirements
+COPY apps/orchestrator/requirements.txt .
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar codigo
+COPY apps/orchestrator /app
+
+# Criar diretorios necessarios
+RUN mkdir -p /app/logs /app/data
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import redis; r=redis.from_url('${REDIS_URL}'); r.ping()" || exit 1
+
+# Entry point
+CMD ["python", "orchestrator_main.py"]
+
