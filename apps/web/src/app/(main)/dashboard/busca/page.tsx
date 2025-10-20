@@ -212,7 +212,7 @@ export default function BuscaAvancadaPage() {
           {/* Lista de Resultados */}
           <div className="space-y-4">
             {resultados.map((evento) => (
-              <EventoCard key={evento.id} evento={evento} showSimilarity />
+              <EventoCard key={evento.id} evento={evento as any} />
             ))}
           </div>
 

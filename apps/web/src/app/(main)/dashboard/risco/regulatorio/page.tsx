@@ -72,7 +72,7 @@ export default function RiscoRegulatorioPage() {
               <p className="text-sm text-muted-foreground">Baixo Risco</p>
               <p className="text-3xl font-bold text-green-400">{totalBaixoRisco}</p>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Score < 40</p>
+            <p className="text-xs text-muted-foreground mt-2">Score {'<'} 40</p>
           </CardContent>
         </Card>
 

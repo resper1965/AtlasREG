@@ -256,7 +256,7 @@ export default function ROEPage() {
               <p className="text-xs text-muted-foreground mt-1">empresas</p>
             </div>
             <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-              <p className="text-sm text-muted-foreground mb-2">ROE < 9%</p>
+              <p className="text-sm text-muted-foreground mb-2">ROE {'<'} 9%</p>
               <p className="text-3xl font-bold text-red-400">
                 {empresasPorROE.filter(e => e.roe < 9).length}
               </p>

@@ -59,7 +59,7 @@ export default function FiltrosSalvosPage() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Mais Usado</p>
-            <p className="text-lg font-bold text-foreground">Multas > R$ 10M</p>
+            <p className="text-lg font-bold text-foreground">Multas {'>'} R$ 10M</p>
           </CardContent>
         </Card>
         <Card>
