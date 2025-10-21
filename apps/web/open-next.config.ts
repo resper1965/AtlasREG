@@ -1,6 +1,26 @@
-import { defineCloudflareConfig } from "@opennextjs/cloudflare";
+const config = {
+  default: {
+    override: {
+      wrapper: 'cloudflare-node',
+      converter: 'edge',
+      proxyExternalRequest: 'fetch',
+      incrementalCache: 'dummy',
+      tagCache: 'dummy',
+      queue: 'dummy',
+    },
+  },
+  edgeExternals: ['node:crypto'],
+  middleware: {
+    external: true,
+    override: {
+      wrapper: 'cloudflare-edge',
+      converter: 'edge',
+      proxyExternalRequest: 'fetch',
+      incrementalCache: 'dummy',
+      tagCache: 'dummy',
+      queue: 'dummy',
+    },
+  },
+};
 
-export default defineCloudflareConfig({
-  // Configuração de caching e otimizações
-});
-
+export default config;

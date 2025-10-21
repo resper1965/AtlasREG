@@ -1,19 +1,17 @@
-import { setupDevPlatform } from '@cloudflare/next-on-pages/next-dev';
-
-if (process.env.NODE_ENV === 'development') {
-  await setupDevPlatform();
-}
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
   },
+  images: {
+    unoptimized: true,
+  },
   compiler: {
-    removeConsole: process.env.NODE_ENV === "production",
+    removeConsole: process.env === "production",
   },
   async redirects() {
     return [

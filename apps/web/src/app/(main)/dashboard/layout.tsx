@@ -3,7 +3,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 import { ClerkHeader } from "@/components/auth/clerk-header";
-import { Sidebar } from "@/components/sidebar/sidebar";
+import { Sidebar } from "@/components/ui/sidebar";
 
 export default async function DashboardLayout({
   children,

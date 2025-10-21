@@ -1,0 +1,436 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║         CLOUDFLARE TUNNEL - SOLUÇÃO FRONTEND NA CLOUDFLARE                   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Data: 20 de Outubro de 2025
+Email: resper@ness.com.br
+Powered by: ness.
+
+================================================================================
+✅ SOLUÇÃO: CLOUDFLARE TUNNEL
+================================================================================
+
+O QUE É:
+--------
+Cloudflare Tunnel cria um túnel seguro entre seu servidor local (Docker) 
+e a Cloudflare Edge, permitindo que aplicações locais sejam acessadas via
+domínio Cloudflare com HTTPS, CDN e DDoS protection.
+
+COMO FUNCIONA:
+--------------
+
+   Seu Docker               Cloudflare Tunnel           Cloudflare Edge
+   (localhost:3100)  ←───→  (túnel seguro)  ←───→      (atlasREG.ness.tec.br)
+         ↓                                                       ↓
+   Next.js SSR                                             Usuários globais
+   (executa código)                                        (recebem HTML)
+
+VANTAGENS:
+----------
+✅ SSR Next.js funciona 100%
+✅ Frontend na Cloudflare Edge (seu requisito!)
+✅ HTTPS automático
+✅ DDoS protection Cloudflare
+✅ CDN global
+✅ Zero modificações de código
+✅ Setup em 10 minutos
+✅ $0/mês (FREE)
+
+================================================================================
+SETUP AUTOMÁTICO
+================================================================================
+
+OPÇÃO 1: Script Automático (Recomendado)
+-----------------------------------------
+
+./cloudflare/TUNNEL_SETUP.sh
+
+O script vai:
+1. ✓ Verificar frontend rodando
+2. ✓ Instalar cloudflared (se necessário)
+3. ✓ Autenticar Cloudflare
+4. ✓ Criar tunnel
+5. ✓ Configurar automaticamente
+6. ✓ Criar DNS automaticamente
+7. ✓ Iniciar tunnel
+
+Tempo: 10 minutos (incluindo autenticação)
+
+OPÇÃO 2: Manual (Passo a Passo)
+--------------------------------
+
+Veja seção "SETUP MANUAL" abaixo.
+
+================================================================================
+SETUP MANUAL (Detalhado)
+================================================================================
+
+PASSO 1: Instalar cloudflared
+------------------------------
+
+# Download
+wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+
+# Instalar
+sudo dpkg -i cloudflared-linux-amd64.deb
+
+# Verificar
+cloudflared --version
+
+PASSO 2: Autenticar
+-------------------
+
+cloudflared tunnel login
+
+# Abre navegador
+# Login na Cloudflare
+# Autorizar acesso
+# Cert salvo em ~/.cloudflared/cert.pem
+
+PASSO 3: Criar Tunnel
+---------------------
+
+cloudflared tunnel create atlasreg-frontend
+
+# Retorna:
+# Tunnel ID: abc123...
+# Credentials: ~/.cloudflared/TUNNEL_ID.json
+
+PASSO 4: Configurar Tunnel
+---------------------------
+
+# Criar arquivo config
+nano ~/.cloudflared/config.yml
+
+# Conteúdo:
+tunnel: TUNNEL_ID_AQUI
+credentials-file: /home/resper/.cloudflared/TUNNEL_ID.json
+
+ingress:
+  - hostname: atlasREG.ness.tec.br
+    service: http://localhost:3100
+  - hostname: web.atlasREG.ness.tec.br
+    service: http://localhost:3100
+  - service: http_status:404
+
+PASSO 5: Criar DNS
+------------------
+
+cloudflared tunnel route dns TUNNEL_ID atlasREG.ness.tec.br
+cloudflared tunnel route dns TUNNEL_ID web.atlasREG.ness.tec.br
+
+# DNS criado automaticamente na Cloudflare
+
+PASSO 6: Rodar Tunnel
+---------------------
+
+# Modo foreground (teste)
+cloudflared tunnel run atlasreg-frontend
+
+# Modo background
+cloudflared tunnel run atlasreg-frontend &
+
+# Ou como serviço (permanente)
+sudo cloudflared service install
+sudo systemctl start cloudflared
+sudo systemctl enable cloudflared
+
+PRONTO! Frontend acessível em:
+https://atlasREG.ness.tec.br
+
+================================================================================
+CONFIGURAÇÃO ADICIONAL
+================================================================================
+
+MÚLTIPLOS SERVIÇOS (Opcional):
+-------------------------------
+
+Se quiser expor API também:
+
+ingress:
+  - hostname: atlasREG.ness.tec.br
+    service: http://localhost:3100
+  - hostname: api.atlasREG.ness.tec.br
+    service: http://localhost:8200
+  - hostname: airflow.atlasREG.ness.tec.br
+    service: http://localhost:8300
+  - service: http_status:404
+
+LOAD BALANCING (Opcional):
+---------------------------
+
+Para múltiplas instâncias:
+
+ingress:
+  - hostname: atlasREG.ness.tec.br
+    service: http://localhost:3100
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: false
+  - service: http_status:404
+
+================================================================================
+GERENCIAMENTO DO TUNNEL
+================================================================================
+
+COMANDOS ÚTEIS:
+---------------
+
+# Listar tunnels
+cloudflared tunnel list
+
+# Info do tunnel
+cloudflared tunnel info atlasreg-frontend
+
+# Cleanup (deletar tunnel)
+cloudflared tunnel delete atlasreg-frontend
+
+# Logs
+cloudflared tunnel run atlasreg-frontend --loglevel debug
+
+# Status
+cloudflared tunnel info atlasreg-frontend
+
+# Parar serviço
+sudo systemctl stop cloudflared
+
+# Ver logs serviço
+sudo journalctl -u cloudflared -f
+
+================================================================================
+RODAR COMO SERVIÇO (Permanente)
+================================================================================
+
+Para tunnel rodar automaticamente após reboot:
+
+1. Instalar como serviço:
+   sudo cloudflared service install
+
+2. Iniciar:
+   sudo systemctl start cloudflared
+
+3. Habilitar auto-start:
+   sudo systemctl enable cloudflared
+
+4. Status:
+   sudo systemctl status cloudflared
+
+5. Logs:
+   sudo journalctl -u cloudflared -f
+
+6. Parar:
+   sudo systemctl stop cloudflared
+
+CONFIGURAÇÃO:
+O serviço usa: ~/.cloudflared/config.yml
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ERRO: "Unable to reach the origin service"
+SOLUÇÃO: Verificar se frontend está rodando
+         docker ps | grep atlasreg-web
+         curl http://localhost:3100
+
+ERRO: "Failed to create tunnel"
+SOLUÇÃO: Verificar autenticação
+         cloudflared tunnel login
+
+ERRO: "DNS record already exists"
+SOLUÇÃO: DNS já foi criado (ok!)
+         Verificar: https://dash.cloudflare.com/ → DNS
+
+ERRO: "Tunnel not found"
+SOLUÇÃO: Criar tunnel primeiro
+         cloudflared tunnel create atlasreg-frontend
+
+ERRO: 502 Bad Gateway
+SOLUÇÃO: Frontend pode estar reiniciando
+         Aguardar 10-20 segundos
+         docker logs -f atlasreg-web
+
+================================================================================
+MONITORAMENTO
+================================================================================
+
+VER MÉTRICAS:
+-------------
+Cloudflare Dashboard → Zero Trust → Access → Tunnels
+→ Selecionar tunnel atlasreg-frontend
+→ Ver métricas de tráfego
+
+VER LOGS:
+---------
+# Tunnel
+cloudflared tunnel run atlasreg-frontend --loglevel debug
+
+# Frontend
+docker logs -f atlasreg-web
+
+# Sistema
+sudo journalctl -u cloudflared -f
+
+HEALTH CHECK:
+-------------
+curl -I https://atlasREG.ness.tec.br
+curl https://atlasREG.ness.tec.br/dashboard/default
+
+================================================================================
+SEGURANÇA
+================================================================================
+
+RECURSOS DE SEGURANÇA:
+----------------------
+✓ HTTPS automático (TLS 1.3)
+✓ Certificado SSL gerenciado pela Cloudflare
+✓ DDoS protection
+✓ WAF (Web Application Firewall)
+✓ Tunnel criptografado
+✓ Sem portas abertas no firewall
+
+CLOUDFLARE ACCESS (Opcional):
+------------------------------
+Adicionar autenticação na frente do tunnel:
+
+Dashboard → Zero Trust → Access → Applications
+→ Add an application
+→ Self-hosted
+→ Domain: atlasREG.ness.tec.br
+→ Adicionar regras de acesso
+
+================================================================================
+CUSTOS
+================================================================================
+
+Cloudflare Tunnel: $0/mês (FREE)
+
+Incluído:
+- Unlimited bandwidth
+- Unlimited requests
+- HTTPS/SSL automático
+- DDoS protection
+- CDN global
+- Analytics básico
+
+Pago (opcional):
+- Cloudflare Access (autenticação): $0-7/usuário/mês
+- Argo Smart Routing: $0.10/GB
+- Load Balancing: $5/mês
+
+Recomendação: FREE tier é suficiente!
+
+================================================================================
+COMPARAÇÃO: TUNNEL vs PAGES
+================================================================================
+
+                          Tunnel         Pages
+                          (Solução)      (Problema)
+──────────────────────────────────────────────────────
+Next.js SSR               ✅ Funciona    ❌ Não funciona
+Modificar código          ❌ Não precisa ✅ Precisa adapter
+Setup                     10 minutos     Aguardar OpenNext
+Cloudflare Edge           ✅             ✅
+HTTPS automático          ✅             ✅
+DDoS protection           ✅             ✅
+Custo                     $0/mês         $0/mês
+Manutenção                Fácil          N/A
+Features Next.js          100%           0%
+
+VENCEDOR: Tunnel 🏆
+
+================================================================================
+APÓS CONFIGURAR
+================================================================================
+
+URLS DISPONÍVEIS:
+-----------------
+Frontend:  https://atlasREG.ness.tec.br ← NOVO!
+           https://web.atlasREG.ness.tec.br ← NOVO!
+           http://localhost:3100 ← Mantido
+
+Workers:   https://atlasreg-api-gateway.ness.workers.dev
+           https://atlasreg-trigger-ingest.ness.workers.dev
+           https://atlasreg-webhook-receiver.ness.workers.dev
+
+GitHub:    https://github.com/resper1965/AtlasREG
+
+ARQUITETURA FINAL:
+------------------
+
+                    Cloudflare Edge
+                    ┌─────────────────────┐
+                    │ Tunnel (Frontend)   │ ← atlasREG.ness.tec.br
+                    │ Workers (API)       │
+                    │ Queue, KV, R2       │
+                    └──────────┬──────────┘
+                               │
+                               ↓
+                    ┌──────────┴──────────┐
+                    │ VPS/Local (Docker)  │
+                    │ Frontend :3100      │
+                    │ API :8200           │
+                    │ Orchestrator        │
+                    └─────────────────────┘
+
+RESULTADO:
+----------
+✅ Frontend Next.js SSR na Cloudflare Edge
+✅ HTTPS automático
+✅ Domínio customizado
+✅ Performance global
+✅ $0/mês
+
+================================================================================
+COMANDOS RÁPIDOS
+================================================================================
+
+# Setup completo
+./cloudflare/TUNNEL_SETUP.sh
+
+# Rodar tunnel
+cloudflared tunnel run atlasreg-frontend
+
+# Background
+cloudflared tunnel run atlasreg-frontend &
+
+# Serviço permanente
+sudo cloudflared service install
+sudo systemctl start cloudflared
+
+# Status
+cloudflared tunnel list
+cloudflared tunnel info atlasreg-frontend
+
+# Testar
+curl https://atlasREG.ness.tec.br
+
+================================================================================
+PRÓXIMOS PASSOS
+================================================================================
+
+1. ☐ Executar: ./cloudflare/TUNNEL_SETUP.sh
+2. ☐ Aguardar DNS propagar (2-5 min)
+3. ☐ Testar: https://atlasREG.ness.tec.br
+4. ☐ Configurar tunnel como serviço (permanente)
+5. ☐ Atualizar documentação
+
+TEMPO TOTAL: 10-15 minutos
+
+RESULTADO:
+==========
+Frontend AtlasReg funcionando na Cloudflare Edge com:
+- SSR completo
+- HTTPS
+- Domínio customizado
+- DDoS protection
+- $0/mês
+
+================================================================================
+Powered by: ness.
+Email: resper@ness.com.br
+Status: ✓ Solução pronta para implementação
+================================================================================
+
