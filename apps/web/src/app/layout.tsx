@@ -2,6 +2,8 @@ import { ReactNode } from "react";
 
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
+import { ptBR } from "@clerk/localizations";
 
 import { Toaster } from "@/components/ui/sonner";
 import { APP_CONFIG } from "@/config/app-config";
@@ -37,18 +39,45 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const themePreset = await getPreference<ThemePreset>("theme_preset", THEME_PRESET_VALUES, "default");
 
   return (
-    <html
-      lang="pt-BR"
-      className={themeMode === "dark" ? "dark" : ""}
-      data-theme-preset={themePreset}
-      suppressHydrationWarning
+    <ClerkProvider
+      localization={ptBR}
+      appearance={{
+        baseTheme: themeMode === "dark" ? undefined : undefined,
+        variables: {
+          colorPrimary: "#00ADE8",
+          colorBackground: themeMode === "dark" ? "#1a1a1a" : "#ffffff",
+          colorText: themeMode === "dark" ? "#ffffff" : "#000000",
+          fontFamily: "var(--font-montserrat), system-ui, sans-serif",
+          borderRadius: "0.5rem",
+        },
+        elements: {
+          rootBox: "font-montserrat",
+          card: themeMode === "dark" ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200",
+          headerTitle: "text-2xl font-semibold",
+          headerSubtitle: "text-gray-500",
+          formButtonPrimary: "bg-[#00ADE8] hover:bg-[#008ec4] text-white font-medium",
+          footerActionLink: "text-[#00ADE8] hover:text-[#008ec4]",
+          identityPreviewText: "text-gray-700 dark:text-gray-300",
+          identityPreviewEditButton: "text-[#00ADE8]",
+          organizationSwitcherTrigger: "border-gray-300 dark:border-gray-700",
+          userButtonPopoverCard: themeMode === "dark" ? "bg-gray-900 border-gray-800" : "bg-white",
+          userButtonPopoverActionButton: "hover:bg-gray-100 dark:hover:bg-gray-800",
+        },
+      }}
     >
-      <body className={`${montserrat.className} min-h-screen antialiased`}>
-        <PreferencesStoreProvider themeMode={themeMode} themePreset={themePreset}>
-          {children}
-          <Toaster />
-        </PreferencesStoreProvider>
-      </body>
-    </html>
+      <html
+        lang="pt-BR"
+        className={themeMode === "dark" ? "dark" : ""}
+        data-theme-preset={themePreset}
+        suppressHydrationWarning
+      >
+        <body className={`${montserrat.className} min-h-screen antialiased`}>
+          <PreferencesStoreProvider themeMode={themeMode} themePreset={themePreset}>
+            {children}
+            <Toaster />
+          </PreferencesStoreProvider>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

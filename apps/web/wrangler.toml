@@ -1,0 +1,13 @@
+main = ".open-next/worker.js"
+name = "atlasreg-frontend"
+compatibility_date = "2025-10-20"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# Environment variables para production
+[vars]
+NEXT_PUBLIC_API_URL = "https://api.atlasREG.ness.tec.br"
+

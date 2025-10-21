@@ -1,0 +1,829 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║         CLERK - AUTENTICAÇÃO MULTITENANCY + RBAC + SSO                       ║
+║                      Implementação AtlasReg                                  ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Data: 20 de Outubro de 2025
+Email: resper@ness.com.br
+Powered by: ness.
+
+================================================================================
+✅ CLERK INSTALADO E CONFIGURADO
+================================================================================
+
+Package: @clerk/nextjs@latest
+Status: ✓ Instalado
+Modo: App Router (Next.js 15.5.5)
+
+================================================================================
+📁 ARQUIVOS CRIADOS
+================================================================================
+
+1. middleware.ts
+   → clerkMiddleware() com proteção de rotas
+   → Rotas públicas: /, /auth, /sign-in, /sign-up
+   → Rotas protegidas: /dashboard/* (require auth)
+
+2. .env.local
+   → Configuração Clerk
+   → URLs de redirect
+   → API backend
+
+3. src/app/(auth)/sign-in/[[...sign-in]]/page.tsx
+   → Página de login Clerk
+   → Styled com ness. branding
+   → Dark theme
+
+4. src/app/(auth)/sign-up/[[...sign-up]]/page.tsx
+   → Página de registro
+   → Styled com ness. branding
+   → Dark theme
+
+PENDENTE:
+---------
+☐ Atualizar app/layout.tsx com ClerkProvider
+☐ Adicionar UserButton no header
+☐ Configurar Clerk Dashboard
+☐ Obter keys
+
+================================================================================
+🔑 PRÓXIMOS PASSOS
+================================================================================
+
+PASSO 1: Criar Conta Clerk
+---------------------------
+1. Acesse: https://dashboard.clerk.com/sign-up
+2. Criar conta (grátis)
+3. Criar aplicação: "AtlasReg"
+4. Selecionar: Next.js
+
+PASSO 2: Obter Keys
+--------------------
+Dashboard → API Keys:
+- NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+- CLERK_SECRET_KEY=sk_test_...
+
+Copiar e colar em .env.local
+
+PASSO 3: Atualizar Layout
+--------------------------
+Será feito automaticamente na próxima etapa
+
+PASSO 4: Testar
+---------------
+npm run dev
+http://localhost:3100/sign-in
+
+================================================================================
+🏢 MULTITENANCY - CONFIGURAÇÃO
+================================================================================
+
+Clerk suporta Multitenancy via Organizations:
+
+SETUP NO CLERK DASHBOARD:
+--------------------------
+1. Dashboard → Organizations → Enable
+2. Configurar:
+   - Organization creation: Allow all users
+   - Organization roles: Admin, Member, Guest
+   - Organization permissions: Custom
+
+CÓDIGO:
+-------
+// Obter organização atual
+import { auth } from '@clerk/nextjs/server'
+
+const { orgId, orgRole, orgPermissions } = await auth()
+
+// Filtrar dados por organização
+const eventos = await getEventos({ orgId })
+
+MULTITENANCY NO BACKEND:
+------------------------
+FastAPI precisa validar orgId em cada request:
+
+from fastapi import Header
+
+@app.get("/events")
+async def get_events(
+    clerk_org_id: str = Header(None, alias="X-Clerk-Org-Id")
+):
+    # Filtrar por organização
+    return db.query(Event).filter_by(org_id=clerk_org_id).all()
+
+================================================================================
+🔐 RBAC - ROLES E PERMISSÕES
+================================================================================
+
+ROLES SUGERIDAS PARA ATLASREG:
+-------------------------------
+
+1. org:admin
+   - Acesso total
+   - Gerenciar usuários
+   - Configurar fontes
+   - Ver todos os dashboards
+   - Exportar dados
+
+2. org:analyst
+   - Ver dashboards
+   - Criar filtros
+   - Exportar relatórios
+   - Sem acesso a configurações
+
+3. org:viewer
+   - Apenas visualização
+   - Sem exportação
+   - Dashboards básicos
+
+4. org:external
+   - Acesso limitado
+   - Apenas dados públicos
+   - Sem dados sensíveis
+
+CONFIGURAÇÃO NO CLERK:
+----------------------
+Dashboard → Roles & Permissions:
+
+Admin permissions:
+- org:events:read
+- org:events:write
+- org:events:delete
+- org:config:manage
+- org:users:manage
+
+Analyst permissions:
+- org:events:read
+- org:dashboards:access
+- org:exports:create
+
+Viewer permissions:
+- org:events:read
+- org:dashboards:view
+
+CÓDIGO - VERIFICAR PERMISSÕES:
+-------------------------------
+import { auth } from '@clerk/nextjs/server'
+
+async function checkPermission() {
+  const { has } = await auth()
+  
+  if (has({ permission: 'org:events:delete' })) {
+    // Permitir deletar
+  }
+  
+  if (has({ role: 'org:admin' })) {
+    // É admin
+  }
+}
+
+PROTEGER COMPONENTES:
+---------------------
+import { Protect } from '@clerk/nextjs'
+
+<Protect permission="org:events:delete">
+  <button>Deletar Evento</button>
+</Protect>
+
+<Protect role="org:admin">
+  <AdminPanel />
+</Protect>
+
+================================================================================
+🔗 SSO - SINGLE SIGN-ON
+================================================================================
+
+Clerk suporta múltiplos providers SSO:
+
+PROVIDERS DISPONÍVEIS:
+----------------------
+✓ Google Workspace (G Suite)
+✓ Microsoft Azure AD / Entra ID
+✓ Okta
+✓ Auth0
+✓ SAML 2.0
+✓ OAuth 2.0
+
+CONFIGURAÇÃO:
+-------------
+1. Clerk Dashboard → SSO Connections
+2. Add connection
+3. Selecionar provider (ex: Google Workspace)
+4. Configurar:
+   - Client ID
+   - Client Secret
+   - Redirect URL
+5. Testar
+
+CÓDIGO (Automático):
+--------------------
+Clerk gerencia SSO automaticamente.
+Usuário clica "Continue with Google" → SSO flow
+
+CUSTOM SSO (Enterprise):
+------------------------
+Para SAML / Enterprise SSO:
+
+1. Clerk Dashboard → Enterprise SSO
+2. Configurar SAML 2.0
+3. Metadata URL ou Upload XML
+4. Mapear atributos (email, name, org)
+5. Testar
+
+AtlasReg automaticamente suporta!
+
+================================================================================
+🏗️ ESTRUTURA DE DADOS MULTITENANCY
+================================================================================
+
+MODELO RECOMENDADO:
+-------------------
+
+Organization (Clerk)
+├─ id: org_xxxxx
+├─ name: "Taesa"
+├─ slug: "taesa"
+└─ metadata: { tier: "enterprise" }
+
+User (Clerk)
+├─ id: user_xxxxx
+├─ email: "analista@taesa.com.br"
+├─ organizations: [org_xxxxx]
+└─ publicMetadata: { department: "risk" }
+
+Event (PostgreSQL - AtlasReg)
+├─ id: uuid
+├─ org_id: org_xxxxx ← FOREIGN KEY
+├─ titulo: "ANEEL multa..."
+├─ created_by: user_xxxxx
+└─ ...
+
+Document (PostgreSQL - AtlasReg)
+├─ id: uuid
+├─ org_id: org_xxxxx ← FOREIGN KEY
+├─ ...
+
+Watchlist (PostgreSQL - AtlasReg)
+├─ id: uuid
+├─ org_id: org_xxxxx ← FOREIGN KEY
+├─ user_id: user_xxxxx
+└─ ...
+
+REGRA: Todas as tabelas têm org_id!
+
+QUERIES SEMPRE FILTRAM POR ORG:
+-------------------------------
+SELECT * FROM events WHERE org_id = :org_id
+
+ISOLAMENTO TOTAL ENTRE ORGANIZAÇÕES:
+-------------------------------------
+Taesa não vê dados da CEMIG
+CEMIG não vê dados da Taesa
+Cada org tem seus próprios eventos, filtros, watchlists
+
+================================================================================
+🔧 INTEGRAÇÃO BACKEND (FastAPI)
+================================================================================
+
+VALIDAR TOKEN CLERK:
+--------------------
+
+from clerk_backend_api import Clerk
+from fastapi import Header, HTTPException
+
+clerk = Clerk(bearer_auth=os.getenv("CLERK_SECRET_KEY"))
+
+async def get_current_user(
+    authorization: str = Header(None)
+):
+    if not authorization:
+        raise HTTPException(401, "No auth token")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    try:
+        # Validar token com Clerk
+        session = clerk.sessions.verify_session(token)
+        return session.user_id, session.org_id
+    except:
+        raise HTTPException(401, "Invalid token")
+
+ENDPOINT COM AUTH:
+------------------
+
+@app.get("/api/events")
+async def get_events(
+    user_data = Depends(get_current_user)
+):
+    user_id, org_id = user_data
+    
+    # Filtrar por organização
+    events = db.query(Event).filter_by(org_id=org_id).all()
+    
+    return events
+
+================================================================================
+🎨 COMPONENTES CLERK NO ATLASREG
+================================================================================
+
+ATUALIZAR LAYOUT:
+-----------------
+Criar componente de Header com Clerk:
+
+// src/components/clerk-header.tsx
+import { UserButton, OrganizationSwitcher } from '@clerk/nextjs'
+import { SignedIn, SignedOut, SignInButton } from '@clerk/nextjs'
+
+export function ClerkHeader() {
+  return (
+    <header className="border-b bg-gray-900 border-gray-800">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">
+            Atlas<span className="text-[#00ADE8]">REG</span>
+          </h1>
+          
+          {/* Trocar de organização */}
+          <SignedIn>
+            <OrganizationSwitcher 
+              appearance={{
+                elements: {
+                  rootBox: "text-white"
+                }
+              }}
+            />
+          </SignedIn>
+        </div>
+        
+        <div>
+          <SignedOut>
+            <SignInButton mode="modal">
+              <button className="px-4 py-2 bg-[#00ADE8] text-white rounded">
+                Login
+              </button>
+            </SignInButton>
+          </SignedOut>
+          
+          <SignedIn>
+            <UserButton 
+              appearance={{
+                elements: {
+                  userButtonAvatarBox: "w-10 h-10"
+                }
+              }}
+              afterSignOutUrl="/"
+            />
+          </SignedIn>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+PROTEGER PÁGINAS:
+-----------------
+
+// src/app/(main)/dashboard/layout.tsx
+import { auth } from '@clerk/nextjs/server'
+import { redirect } from 'next/navigation'
+
+export default async function DashboardLayout({ children }) {
+  const { userId } = await auth()
+  
+  if (!userId) {
+    redirect('/sign-in')
+  }
+  
+  return <>{children}</>
+}
+
+MOSTRAR DADOS DO USUÁRIO:
+-------------------------
+
+import { currentUser } from '@clerk/nextjs/server'
+
+export default async function ProfilePage() {
+  const user = await currentUser()
+  
+  return (
+    <div>
+      <h1>Bem-vindo, {user?.firstName}</h1>
+      <p>Email: {user?.emailAddresses[0].emailAddress}</p>
+      <p>Organização: {user?.organizationMemberships[0]?.organization.name}</p>
+    </div>
+  )
+}
+
+================================================================================
+🔐 RBAC - IMPLEMENTAÇÃO COMPLETA
+================================================================================
+
+DEFINIR ROLES NO CLERK DASHBOARD:
+----------------------------------
+
+Dashboard → Roles:
+
+1. admin
+   Permissions:
+   - org:events:read, write, delete
+   - org:config:manage
+   - org:users:invite
+   - org:exports:unlimited
+
+2. analyst
+   Permissions:
+   - org:events:read
+   - org:dashboards:all
+   - org:exports:limited
+
+3. viewer
+   Permissions:
+   - org:events:read
+   - org:dashboards:basic
+
+USAR NO CÓDIGO:
+---------------
+
+import { Protect } from '@clerk/nextjs'
+
+// Botão apenas para admin
+<Protect role="org:admin">
+  <button onClick={deleteEvent}>Deletar</button>
+</Protect>
+
+// Seção por permissão
+<Protect permission="org:exports:create">
+  <ExportButton />
+</Protect>
+
+// Múltiplas condições
+<Protect
+  role="org:admin"
+  permission="org:config:manage"
+  fallback={<p>Sem permissão</p>}
+>
+  <ConfigPanel />
+</Protect>
+
+SERVER-SIDE:
+------------
+
+import { auth } from '@clerk/nextjs/server'
+
+async function serverAction() {
+  const { has } = await auth()
+  
+  if (!has({ permission: 'org:events:delete' })) {
+    throw new Error('Sem permissão')
+  }
+  
+  // Deletar evento
+}
+
+================================================================================
+🏢 MULTITENANCY - CENÁRIOS DE USO
+================================================================================
+
+CENÁRIO 1: Múltiplas Empresas
+------------------------------
+
+Organizações:
+- Taesa (transmissora)
+- CEMIG (transmissora)
+- Energisa (distribuidora)
+
+Cada org vê apenas seus dados:
+- Taesa vê eventos sobre Taesa
+- CEMIG vê eventos sobre CEMIG
+- Isolamento total
+
+CENÁRIO 2: Consultorias
+-----------------------
+
+Organização: "Consultoria Energia LTDA"
+
+Membros:
+- Analista A (acesso cliente X)
+- Analista B (acesso cliente Y)
+- Admin (acesso tudo)
+
+Usar custom metadata para filtrar por cliente.
+
+CENÁRIO 3: Órgão Regulador
+---------------------------
+
+Organização: "ANEEL"
+
+Departamentos:
+- Fiscalização (vê multas)
+- Outorgas (vê concessões)
+- Estudos (vê tudo)
+
+Usar roles por departamento.
+
+================================================================================
+🔗 SSO - CONFIGURAÇÃO DETALHADA
+================================================================================
+
+GOOGLE WORKSPACE SSO:
+---------------------
+
+1. Clerk Dashboard → SSO → Google
+2. Enable Google SSO
+3. Configurar domínio: @taesa.com.br
+4. Auto-assign to organization: Taesa
+5. Auto-assign role: analyst
+
+Resultado:
+- Funcionário Taesa faz login com @taesa.com.br
+- Automaticamente entra na org Taesa
+- Automaticamente recebe role analyst
+
+MICROSOFT ENTRA ID (Azure AD):
+------------------------------
+
+1. Clerk Dashboard → SSO → Microsoft
+2. Configure:
+   - Tenant ID
+   - Client ID
+   - Client Secret
+3. Redirect URL: https://clerk.atlasreg.ness.tec.br/...
+4. Mapear claims
+
+SAML 2.0 (Enterprise):
+----------------------
+
+Para grandes empresas:
+
+1. Clerk Dashboard → Enterprise SSO
+2. Upload SAML metadata XML
+3. Configure attribute mapping:
+   - email → email
+   - name → firstName + lastName
+   - department → publicMetadata.department
+4. Test SSO
+
+================================================================================
+📊 METADATA E CUSTOM FIELDS
+================================================================================
+
+USER METADATA (Clerk):
+----------------------
+
+publicMetadata (acessível no frontend):
+{
+  "department": "Risk Analysis",
+  "employee_id": "12345",
+  "tier": "premium"
+}
+
+privateMetadata (apenas backend):
+{
+  "internal_notes": "VIP customer",
+  "last_audit": "2025-10-20"
+}
+
+unsafeMetadata (usuário pode editar):
+{
+  "preferences": {
+    "theme": "dark",
+    "notifications": true
+  }
+}
+
+ORGANIZATION METADATA:
+----------------------
+
+publicMetadata:
+{
+  "tier": "enterprise",
+  "max_users": 100,
+  "features": ["advanced_analytics", "api_access"],
+  "contract_end": "2026-12-31"
+}
+
+USO NO CÓDIGO:
+--------------
+
+import { currentUser } from '@clerk/nextjs/server'
+
+const user = await currentUser()
+const tier = user?.publicMetadata?.tier
+
+if (tier === "premium") {
+  // Features premium
+}
+
+================================================================================
+🚀 FEATURES CLERK QUE VAMOS USAR
+================================================================================
+
+1. ✅ Multitenancy via Organizations
+   - Isolamento de dados por empresa
+   - Organization switcher
+   - Auto-assignment via SSO
+
+2. ✅ RBAC (Role-Based Access Control)
+   - Roles customizáveis
+   - Permissions granulares
+   - Protect components
+
+3. ✅ SSO (Single Sign-On)
+   - Google Workspace
+   - Microsoft Entra ID
+   - SAML 2.0
+
+4. ✅ MFA (Multi-Factor Authentication)
+   - SMS
+   - Authenticator apps
+   - Backup codes
+
+5. ✅ Session Management
+   - Tokens JWT
+   - Auto-refresh
+   - Revocation
+
+6. ✅ User Management
+   - Profile management
+   - Email verification
+   - Password reset
+
+7. ✅ Webhooks
+   - user.created
+   - organization.created
+   - session.created
+   - Integrar com backend
+
+8. ✅ Analytics
+   - Login metrics
+   - User activity
+   - Security events
+
+================================================================================
+💰 CUSTOS CLERK
+================================================================================
+
+FREE TIER:
+----------
+✓ 10.000 MAUs (Monthly Active Users)
+✓ Unlimited organizations
+✓ SSO (Google, Microsoft, GitHub)
+✓ RBAC básico
+✓ MFA
+✓ Webhooks
+
+PREÇO: $0/mês até 10k usuários
+
+PRO TIER ($25/mês):
+-------------------
+✓ 1.000 MAUs incluídos
+✓ SAML SSO
+✓ Advanced RBAC
+✓ Custom roles
+✓ Priority support
+
+ENTERPRISE:
+-----------
+✓ Unlimited MAUs
+✓ Custom SSO
+✓ SLA 99.99%
+✓ Dedicated support
+
+Para AtlasReg:
+--------------
+FREE TIER é suficiente! (até 10k usuários)
+
+================================================================================
+🔧 INTEGRAÇÃO COM ATLASREG EXISTENTE
+================================================================================
+
+SUBSTITUIR AUTH ATUAL:
+----------------------
+
+Remover (se existir):
+✗ JWT auth manual
+✗ Session cookies manuais
+✗ Password hashing manual
+
+Usar Clerk:
+✓ Auth gerenciado
+✓ Tokens automáticos
+✓ Sessões seguras
+
+MIGRAR USUÁRIOS:
+----------------
+
+Se já tem usuários no PostgreSQL:
+
+1. Export users do DB
+2. Import via Clerk API:
+
+import { clerkClient } from '@clerk/nextjs/server'
+
+await clerkClient.users.createUser({
+  emailAddress: ["user@example.com"],
+  password: "temporary123",
+  publicMetadata: { migrated: true }
+})
+
+3. Enviar email para resetar senha
+
+WEBHOOKS CLERK → BACKEND:
+--------------------------
+
+Backend FastAPI recebe webhooks:
+
+@app.post("/webhooks/clerk")
+async def clerk_webhook(request: Request):
+    # Validar signature
+    # Processar evento
+    
+    if event.type == "user.created":
+        # Criar registro no DB
+        user = User(
+            clerk_id=event.data.id,
+            email=event.data.email_addresses[0].email,
+            org_id=event.data.organization_memberships[0].id
+        )
+        db.add(user)
+    
+    if event.type == "organization.created":
+        # Setup inicial da org
+        create_default_watchlists(event.data.id)
+
+================================================================================
+📋 CHECKLIST DE IMPLEMENTAÇÃO
+================================================================================
+
+SETUP INICIAL:
+--------------
+☐ 1. Criar conta Clerk
+☐ 2. Criar aplicação AtlasReg
+☐ 3. Obter API keys
+☐ 4. Configurar .env.local
+☐ 5. Atualizar layout.tsx
+☐ 6. Testar login local
+
+MULTITENANCY:
+-------------
+☐ 7. Enable Organizations no Clerk
+☐ 8. Criar roles (admin, analyst, viewer)
+☐ 9. Adicionar org_id em todas as tabelas
+☐ 10. Atualizar queries com filtro org_id
+
+RBAC:
+-----
+☐ 11. Definir permissions
+☐ 12. Proteger componentes com <Protect>
+☐ 13. Verificar permissions server-side
+☐ 14. Testar diferentes roles
+
+SSO:
+----
+☐ 15. Configurar Google SSO
+☐ 16. Configurar Microsoft SSO (opcional)
+☐ 17. Testar SSO flow
+☐ 18. Auto-assignment de org
+
+BACKEND:
+--------
+☐ 19. Instalar clerk-backend-api (Python)
+☐ 20. Validar tokens no FastAPI
+☐ 21. Filtrar dados por org_id
+☐ 22. Configurar webhooks
+
+PRODUÇÃO:
+---------
+☐ 23. Configurar domínio customizado Clerk
+☐ 24. SSL/TLS
+☐ 25. Monitoramento
+☐ 26. Backup de usuários
+
+================================================================================
+🚀 PRÓXIMA AÇÃO IMEDIATA
+================================================================================
+
+AGORA:
+------
+1. Criar conta Clerk: https://dashboard.clerk.com/sign-up
+2. Obter keys
+3. Atualizar .env.local
+4. Eu vou atualizar o layout.tsx
+
+DEPOIS:
+-------
+Testar login e configurar organizations
+
+COMANDO PARA CONTINUAR:
+-----------------------
+Informe as keys do Clerk ou diga "continuar" para eu
+completar a integração com keys de exemplo (placeholder).
+
+================================================================================
+Powered by: ness.
+Email: resper@ness.com.br
+Status: ✓ Clerk instalado - Aguardando keys para completar
+================================================================================
+

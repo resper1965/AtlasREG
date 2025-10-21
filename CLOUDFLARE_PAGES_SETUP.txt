@@ -1,0 +1,292 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║              CLOUDFLARE PAGES - SETUP DO FRONTEND                            ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Data: 20 de Outubro de 2025
+Frontend: Next.js 15
+Domínio: atlasREG.ness.tec.br
+
+================================================================================
+STATUS ATUAL
+================================================================================
+
+Frontend:
+✓ Código Next.js: apps/web/
+✓ Rodando local: http://localhost:3100
+✓ Container Docker: atlasreg-web
+✓ No GitHub: https://github.com/resper1965/AtlasREG/tree/main/apps/web
+
+Cloudflare Pages:
+❌ NÃO CRIADO (precisa fazer deploy)
+
+================================================================================
+DEPLOY CLOUDFLARE PAGES - 3 OPÇÕES
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OPÇÃO 1: VIA GITHUB (RECOMENDADO - AUTO-DEPLOY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Vantagem: Deploy automático a cada push no GitHub
+
+Passos:
+
+1. Acesse Cloudflare Dashboard:
+   https://dash.cloudflare.com/
+
+2. Workers & Pages → Create application → Pages
+
+3. Connect to Git:
+   - Selecione: GitHub
+   - Autorize acesso (se necessário)
+   - Selecione repositório: resper1965/AtlasREG
+
+4. Configure build settings:
+   
+   Project name: atlasreg-frontend
+   Production branch: main
+   
+   Build settings:
+   ┌─────────────────────────────────────────────────┐
+   │ Framework preset: Next.js                       │
+   │ Build command: cd apps/web && npm install &&    │
+   │                npm run build                    │
+   │ Build output directory: apps/web/.next          │
+   │ Root directory: / (leave empty)                 │
+   └─────────────────────────────────────────────────┘
+
+5. Environment variables:
+   Nome: NEXT_PUBLIC_API_URL
+   Valor: https://api.atlasREG.ness.tec.br
+
+6. Save and Deploy
+
+7. Aguardar build (~3-5 min)
+
+8. URL disponível: https://atlasreg-frontend.pages.dev
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OPÇÃO 2: VIA WRANGLER CLI (DEPLOY MANUAL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Vantagem: Controle total, deploy quando quiser
+
+Comandos:
+
+# 1. Build do frontend
+cd /home/resper/nSaulo/apps/web
+npm install
+npm run build
+
+# 2. Deploy no Pages
+npx wrangler pages deploy .next --project-name=atlasreg-frontend
+
+# 3. (Primeira vez) Configurar project
+# Wrangler vai perguntar:
+# - Create a new project? Yes
+# - Project name? atlasreg-frontend
+
+# 4. URL disponível
+# https://atlasreg-frontend.pages.dev
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OPÇÃO 3: VIA SCRIPT AUTOMÁTICO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Criamos um script para facilitar:
+
+./DEPLOY_PAGES.sh
+
+Ou manualmente:
+bash /home/resper/nSaulo/DEPLOY_PAGES.sh
+
+================================================================================
+CONFIGURAR DOMÍNIO CUSTOMIZADO
+================================================================================
+
+Após deploy no Pages:
+
+1. Cloudflare Dashboard → Pages → atlasreg-frontend
+
+2. Custom domains → Set up a custom domain
+
+3. Adicionar domínio: atlasREG.ness.tec.br
+
+4. Cloudflare vai:
+   ✓ Criar DNS CNAME automaticamente
+   ✓ Provisionar certificado SSL
+   ✓ Configurar redirect HTTP → HTTPS
+
+5. Aguardar propagação (~5 min)
+
+6. Acessar: https://atlasREG.ness.tec.br
+
+PRONTO! Frontend no ar com domínio customizado.
+
+================================================================================
+CONFIGURAÇÃO RECOMENDADA
+================================================================================
+
+Environment Variables (Pages):
+───────────────────────────────
+
+NEXT_PUBLIC_API_URL=https://api.atlasREG.ness.tec.br
+
+Build Settings:
+───────────────
+
+Build command:
+cd apps/web && npm install && npm run build
+
+Build output directory:
+apps/web/.next
+
+Root directory:
+/ (ou deixar vazio)
+
+Node version:
+22.x (ou 20.x)
+
+================================================================================
+APÓS DEPLOY
+================================================================================
+
+URLs Disponíveis:
+─────────────────
+
+Temporária (Pages.dev):
+https://atlasreg-frontend.pages.dev
+
+Produção (Domínio customizado):
+https://atlasREG.ness.tec.br
+
+Preview (para cada commit):
+https://[commit-hash].atlasreg-frontend.pages.dev
+
+Verificar:
+──────────
+
+# Health check
+curl -I https://atlasreg-frontend.pages.dev
+
+# Verificar domínio customizado
+curl -I https://atlasREG.ness.tec.br
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Build falha:
+────────────
+- Verificar Node version (usar 20.x ou 22.x)
+- Verificar package.json existe em apps/web/
+- Verificar build command está correto
+
+404 Not Found:
+──────────────
+- Verificar build output directory: apps/web/.next
+- Next.js deve estar em modo standalone ou static export
+
+Domínio não resolve:
+────────────────────
+- Aguardar propagação DNS (5-30 min)
+- Verificar CNAME foi criado automaticamente
+- Verificar em: https://dnschecker.org/
+
+SSL Error:
+──────────
+- Aguardar provisionamento certificado (~5 min)
+- Cloudflare gera SSL automaticamente
+
+================================================================================
+COMPARAÇÃO DAS OPÇÕES
+================================================================================
+
+┌─────────────────┬──────────────┬──────────────┬──────────────┐
+│                 │ GitHub CI/CD │ Wrangler CLI │ Manual Upload│
+├─────────────────┼──────────────┼──────────────┼──────────────┤
+│ Auto-deploy     │      ✓       │      ✗       │      ✗       │
+│ Preview builds  │      ✓       │      ✗       │      ✗       │
+│ Fácil rollback  │      ✓       │      ✗       │      ✗       │
+│ Controle manual │      ✗       │      ✓       │      ✓       │
+│ Sem dependência │      ✗       │      ✓       │      ✓       │
+│ Build remoto    │      ✓       │      ✗       │      ✗       │
+└─────────────────┴──────────────┴──────────────┴──────────────┘
+
+Recomendação: GitHub CI/CD (Opção 1)
+
+================================================================================
+CUSTO
+================================================================================
+
+💰 $0/mês (FREE TIER)
+
+Cloudflare Pages Free:
+- Unlimited requests
+- Unlimited bandwidth
+- 500 builds/month
+- 1 concurrent build
+- Custom domains
+- SSL/TLS certificates
+- Preview deployments
+
+================================================================================
+PRÓXIMOS PASSOS
+================================================================================
+
+AGORA:
+──────
+☐ 1. Escolher método de deploy (recomendo GitHub)
+☐ 2. Fazer deploy inicial
+☐ 3. Verificar URL temporária
+☐ 4. Configurar domínio customizado
+☐ 5. Testar https://atlasREG.ness.tec.br
+
+DEPOIS:
+───────
+☐ Deploy Workers (se ainda não fez)
+☐ Configurar DNS completo
+☐ Testar integração frontend ↔ API
+
+================================================================================
+COMANDO RÁPIDO
+================================================================================
+
+Para deploy via GitHub (Recomendado):
+👉 Acesse: https://dash.cloudflare.com/
+👉 Workers & Pages → Create → Connect to Git
+👉 Selecione: resper1965/AtlasREG
+
+Para deploy via CLI:
+👉 Execute: ./DEPLOY_PAGES.sh
+👉 Ou: cd apps/web && npm run build && npx wrangler pages deploy .next
+
+================================================================================
+RESUMO
+================================================================================
+
+Status Atual:
+❌ Cloudflare Pages NÃO criado
+✓ Frontend Next.js pronto
+✓ Código no GitHub
+
+Ação Necessária:
+Fazer deploy do frontend no Cloudflare Pages
+
+Tempo Estimado:
+5-10 minutos (primeira vez)
+
+Custo:
+$0/mês (FREE)
+
+Resultado:
+Frontend acessível em https://atlasREG.ness.tec.br
+
+================================================================================
+Powered by: ness.
+Email: resper@ness.com.br
+Repositório: https://github.com/resper1965/AtlasREG
+================================================================================
+
