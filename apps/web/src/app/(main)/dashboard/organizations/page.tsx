@@ -45,7 +45,9 @@ export default async function OrganizationsPage() {
 
   // Buscar organização atual do cookie/preferência
   const currentOrgId =
-    memberships && memberships.length > 0 ? memberships[0].organization.id : null
+    memberships && memberships.length > 0
+      ? (memberships[0] as any).organization.id
+      : null
 
   // Se há uma organização atual, buscar detalhes e membros
   let currentOrgMembers = null

@@ -67,7 +67,7 @@ CREATE POLICY "Users can view organizations they belong to"
 -- ENUM: user_role
 -- Papéis de usuários no sistema
 -- =====================================================
-CREATE TYPE public.user_role AS ENUM ('admin', 'analyst', 'member', 'viewer', 'external');
+CREATE TYPE public.user_role AS ENUM ('admin', 'manager', 'editor', 'viewer', 'member');
 
 -- =====================================================
 -- TABELA: organization_members
@@ -238,15 +238,28 @@ INSERT INTO public.permissions (name, description) VALUES
 INSERT INTO public.role_permissions (role, permission_id)
 SELECT 'admin', id FROM public.permissions;
 
--- ANALYST: Permissões de análise
+-- MANAGER: Permissões de gerenciamento
 INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'analyst', id FROM public.permissions
+SELECT 'manager', id FROM public.permissions
+WHERE name IN (
+  'events.read', 'events.create', 'events.update', 'events.delete', 'events.export',
+  'dashboards.view.all', 'dashboards.create', 'dashboards.share',
+  'watchlists.read', 'watchlists.create', 'watchlists.update', 'watchlists.delete',
+  'config.read', 'config.manage',
+  'users.read', 'users.invite',
+  'exports.create', 'exports.unlimited',
+  'analytics.view', 'analytics.advanced'
+);
+
+-- EDITOR: Permissões de edição
+INSERT INTO public.role_permissions (role, permission_id)
+SELECT 'editor', id FROM public.permissions
 WHERE name IN (
   'events.read', 'events.create', 'events.update', 'events.export',
   'dashboards.view.all', 'dashboards.create', 'dashboards.share',
   'watchlists.read', 'watchlists.create', 'watchlists.update',
   'config.read',
-  'exports.create', 'exports.unlimited',
+  'exports.create',
   'analytics.view', 'analytics.advanced'
 );
 
@@ -256,7 +269,7 @@ SELECT 'member', id FROM public.permissions
 WHERE name IN (
   'events.read', 'events.create',
   'dashboards.view.basic', 'dashboards.create',
-  'watchlists.read', 'watchlists.create', 'watchlists.update',
+  'watchlists.read', 'watchlists.create',
   'config.read',
   'exports.create',
   'analytics.view'
@@ -269,16 +282,7 @@ WHERE name IN (
   'events.read',
   'dashboards.view.basic',
   'watchlists.read',
-  'config.read',
-  'exports.create'
-);
-
--- EXTERNAL: Acesso muito limitado
-INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'external', id FROM public.permissions
-WHERE name IN (
-  'events.read',
-  'dashboards.view.basic'
+  'config.read'
 );
 
 -- =====================================================
