@@ -1,15 +1,22 @@
--- Migration: Initial Schema para AtlasREG
--- Criado em: 2025-10-31
--- Descrição: Cria tabelas de usuários, organizações e permissões
+-- =====================================================
+-- MIGRATION SIMPLIFICADA - AtlasREG
+-- Teste esta versão primeiro se tiver problemas
+-- =====================================================
+
+-- IMPORTANTE: O Supabase já gerencia autenticação!
+-- A tabela auth.users é NATIVA e já existe
+-- Não precisamos criar sistema de auth do zero
+-- Apenas criamos tabelas COMPLEMENTARES
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =====================================================
--- TABELA: profiles
--- Perfil de usuário sincronizado com auth.users
+-- PASSO 1: CRIAR TABELAS (sem policies)
 -- =====================================================
-CREATE TABLE public.profiles (
+
+-- TABELA: profiles
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   full_name TEXT,
@@ -18,27 +25,10 @@ CREATE TABLE public.profiles (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Índice para busca rápida por email
-CREATE INDEX idx_profiles_email ON public.profiles(email);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 
--- RLS (Row Level Security)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
--- Policy: Usuários podem ver apenas seu próprio perfil
-CREATE POLICY "Users can view own profile"
-  ON public.profiles FOR SELECT
-  USING (auth.uid() = id);
-
--- Policy: Usuários podem atualizar apenas seu próprio perfil
-CREATE POLICY "Users can update own profile"
-  ON public.profiles FOR UPDATE
-  USING (auth.uid() = id);
-
--- =====================================================
 -- TABELA: organizations
--- Organizações (multi-tenancy)
--- =====================================================
-CREATE TABLE public.organizations (
+CREATE TABLE IF NOT EXISTS public.organizations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   slug TEXT UNIQUE NOT NULL,
@@ -47,23 +37,17 @@ CREATE TABLE public.organizations (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Índice para busca por slug
-CREATE INDEX idx_organizations_slug ON public.organizations(slug);
+CREATE INDEX IF NOT EXISTS idx_organizations_slug ON public.organizations(slug);
 
--- RLS (ativamos agora, mas policies vêm depois)
-ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
-
--- =====================================================
 -- ENUM: user_role
--- Papéis de usuários no sistema
--- =====================================================
-CREATE TYPE public.user_role AS ENUM ('admin', 'manager', 'editor', 'viewer', 'member');
+DO $$ BEGIN
+  CREATE TYPE public.user_role AS ENUM ('admin', 'manager', 'editor', 'viewer', 'member');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
--- =====================================================
 -- TABELA: organization_members
--- Membros de organizações com seus papéis
--- =====================================================
-CREATE TABLE public.organization_members (
+CREATE TABLE IF NOT EXISTS public.organization_members (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -73,15 +57,51 @@ CREATE TABLE public.organization_members (
   UNIQUE(organization_id, user_id)
 );
 
--- Índices para performance
-CREATE INDEX idx_org_members_org_id ON public.organization_members(organization_id);
-CREATE INDEX idx_org_members_user_id ON public.organization_members(user_id);
-CREATE INDEX idx_org_members_role ON public.organization_members(role);
+CREATE INDEX IF NOT EXISTS idx_org_members_org_id ON public.organization_members(organization_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON public.organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_role ON public.organization_members(role);
 
--- RLS
+-- TABELA: permissions
+CREATE TABLE IF NOT EXISTS public.permissions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  description TEXT
+);
+
+-- TABELA: role_permissions
+CREATE TABLE IF NOT EXISTS public.role_permissions (
+  role public.user_role NOT NULL,
+  permission_id UUID NOT NULL REFERENCES public.permissions(id) ON DELETE CASCADE,
+  PRIMARY KEY (role, permission_id)
+);
+
+-- =====================================================
+-- PASSO 2: HABILITAR RLS (Row Level Security)
+-- =====================================================
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 
--- Policy: Usuários podem ver membros de organizações que pertencem
+-- =====================================================
+-- PASSO 3: CRIAR POLICIES (depois das tabelas)
+-- =====================================================
+
+-- Policies: profiles
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile"
+  ON public.profiles FOR SELECT
+  USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile"
+  ON public.profiles FOR UPDATE
+  USING (auth.uid() = id);
+
+-- Policies: organization_members
+DROP POLICY IF EXISTS "Users can view organization members" ON public.organization_members;
 CREATE POLICY "Users can view organization members"
   ON public.organization_members FOR SELECT
   USING (
@@ -92,7 +112,7 @@ CREATE POLICY "Users can view organization members"
     )
   );
 
--- Policy: Apenas admins podem adicionar membros
+DROP POLICY IF EXISTS "Admins can insert organization members" ON public.organization_members;
 CREATE POLICY "Admins can insert organization members"
   ON public.organization_members FOR INSERT
   WITH CHECK (
@@ -104,50 +124,8 @@ CREATE POLICY "Admins can insert organization members"
     )
   );
 
--- =====================================================
--- TABELA: permissions
--- Permissões disponíveis no sistema
--- =====================================================
-CREATE TABLE public.permissions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT UNIQUE NOT NULL,
-  description TEXT
-);
-
--- RLS
-ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
-
--- Policy: Todos podem ver permissões
-CREATE POLICY "Everyone can view permissions"
-  ON public.permissions FOR SELECT
-  TO authenticated
-  USING (true);
-
--- =====================================================
--- TABELA: role_permissions
--- Mapeamento de permissões por papel
--- =====================================================
-CREATE TABLE public.role_permissions (
-  role public.user_role NOT NULL,
-  permission_id UUID NOT NULL REFERENCES public.permissions(id) ON DELETE CASCADE,
-  PRIMARY KEY (role, permission_id)
-);
-
--- RLS
-ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
-
--- Policy: Todos podem ver role_permissions
-CREATE POLICY "Everyone can view role permissions"
-  ON public.role_permissions FOR SELECT
-  TO authenticated
-  USING (true);
-
--- =====================================================
--- POLICIES: organizations
--- Criadas depois que organization_members existe
--- =====================================================
-
--- Policy: Usuários podem ver organizações das quais são membros
+-- Policies: organizations
+DROP POLICY IF EXISTS "Users can view organizations they belong to" ON public.organizations;
 CREATE POLICY "Users can view organizations they belong to"
   ON public.organizations FOR SELECT
   USING (
@@ -158,12 +136,12 @@ CREATE POLICY "Users can view organizations they belong to"
     )
   );
 
--- Policy: Usuários podem criar organizações
+DROP POLICY IF EXISTS "Users can create organizations" ON public.organizations;
 CREATE POLICY "Users can create organizations"
   ON public.organizations FOR INSERT
   WITH CHECK (true);
 
--- Policy: Admins podem atualizar organizações
+DROP POLICY IF EXISTS "Admins can update organizations" ON public.organizations;
 CREATE POLICY "Admins can update organizations"
   ON public.organizations FOR UPDATE
   USING (
@@ -175,10 +153,25 @@ CREATE POLICY "Admins can update organizations"
     )
   );
 
+-- Policies: permissions
+DROP POLICY IF EXISTS "Everyone can view permissions" ON public.permissions;
+CREATE POLICY "Everyone can view permissions"
+  ON public.permissions FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Policies: role_permissions
+DROP POLICY IF EXISTS "Everyone can view role permissions" ON public.role_permissions;
+CREATE POLICY "Everyone can view role permissions"
+  ON public.role_permissions FOR SELECT
+  TO authenticated
+  USING (true);
+
 -- =====================================================
--- FUNCTION: handle_new_user
--- Trigger automático ao criar novo usuário no auth
+-- PASSO 4: TRIGGERS AUTOMÁTICOS
 -- =====================================================
+
+-- Função: criar perfil automaticamente quando usuário se registra
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -193,16 +186,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Trigger que chama a função acima
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_new_user();
 
--- =====================================================
--- FUNCTION: update_updated_at
--- Atualiza automaticamente o campo updated_at
--- =====================================================
+-- Função: atualizar updated_at automaticamente
 CREATE OR REPLACE FUNCTION public.update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -211,20 +201,27 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Triggers para auto-update de updated_at
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
 CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at();
 
+DROP TRIGGER IF EXISTS update_organizations_updated_at ON public.organizations;
 CREATE TRIGGER update_organizations_updated_at
   BEFORE UPDATE ON public.organizations
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at();
 
 -- =====================================================
--- SEED: Permissões Iniciais
+-- PASSO 5: SEED DE PERMISSÕES
 -- =====================================================
+
+-- Limpar permissões existentes (se re-executar)
+DELETE FROM public.role_permissions;
+DELETE FROM public.permissions;
+
+-- Inserir permissões
 INSERT INTO public.permissions (name, description) VALUES
   ('events.read', 'Visualizar eventos'),
   ('events.create', 'Criar eventos'),
@@ -254,17 +251,13 @@ INSERT INTO public.permissions (name, description) VALUES
   ('audit.view', 'Visualizar logs de auditoria'),
   ('audit.export', 'Exportar logs de auditoria');
 
--- =====================================================
--- SEED: Mapeamento Role -> Permissions
--- =====================================================
-
 -- ADMIN: Todas as permissões
 INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'admin', id FROM public.permissions;
+SELECT 'admin'::public.user_role, id FROM public.permissions;
 
 -- MANAGER: Permissões de gerenciamento
 INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'manager', id FROM public.permissions
+SELECT 'manager'::public.user_role, id FROM public.permissions
 WHERE name IN (
   'events.read', 'events.create', 'events.update', 'events.delete', 'events.export',
   'dashboards.view.all', 'dashboards.create', 'dashboards.share',
@@ -277,7 +270,7 @@ WHERE name IN (
 
 -- EDITOR: Permissões de edição
 INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'editor', id FROM public.permissions
+SELECT 'editor'::public.user_role, id FROM public.permissions
 WHERE name IN (
   'events.read', 'events.create', 'events.update', 'events.export',
   'dashboards.view.all', 'dashboards.create', 'dashboards.share',
@@ -287,9 +280,9 @@ WHERE name IN (
   'analytics.view', 'analytics.advanced'
 );
 
--- MEMBER: Permissões básicas de membro
+-- MEMBER: Permissões básicas
 INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'member', id FROM public.permissions
+SELECT 'member'::public.user_role, id FROM public.permissions
 WHERE name IN (
   'events.read', 'events.create',
   'dashboards.view.basic', 'dashboards.create',
@@ -301,7 +294,7 @@ WHERE name IN (
 
 -- VIEWER: Apenas visualização
 INSERT INTO public.role_permissions (role, permission_id)
-SELECT 'viewer', id FROM public.permissions
+SELECT 'viewer'::public.user_role, id FROM public.permissions
 WHERE name IN (
   'events.read',
   'dashboards.view.basic',
@@ -310,14 +303,7 @@ WHERE name IN (
 );
 
 -- =====================================================
--- COMMENTS
--- Documentação das tabelas
+-- DONE! 🎉
 -- =====================================================
-COMMENT ON TABLE public.profiles IS 'Perfis de usuários sincronizados com auth.users';
-COMMENT ON TABLE public.organizations IS 'Organizações para multi-tenancy';
-COMMENT ON TABLE public.organization_members IS 'Membros de organizações com seus papéis';
-COMMENT ON TABLE public.permissions IS 'Permissões disponíveis no sistema';
-COMMENT ON TABLE public.role_permissions IS 'Mapeamento de permissões por papel';
-
-COMMENT ON COLUMN public.profiles.id IS 'UUID do usuário (FK para auth.users)';
-COMMENT ON COLUMN public.organization_members.role IS 'Papel do usuário na organização';
+-- Todas as tabelas criadas com sucesso!
+-- Verifique em: Table Editor no Supabase Dashboard
