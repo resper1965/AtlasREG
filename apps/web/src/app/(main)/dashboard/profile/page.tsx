@@ -1,9 +1,41 @@
-import { currentUser } from "@clerk/nextjs/server";
-import { UserProfile } from "@clerk/nextjs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { redirect } from 'next/navigation'
+
+import { createClient } from '@/lib/supabase/server'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ProfileForm } from './profile-form'
 
 export default async function ProfilePage() {
-  const user = await currentUser();
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  // Buscar perfil do usuário
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  // Buscar organizações do usuário
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select(`
+      id,
+      role,
+      organization:organizations (
+        id,
+        name,
+        slug,
+        avatar_url
+      )
+    `)
+    .eq('user_id', user.id)
 
   return (
     <div className="space-y-6">
@@ -22,10 +54,10 @@ export default async function ProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold truncate">
-              {user?.emailAddresses[0]?.emailAddress}
+              {user.email}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {user?.emailAddresses[0]?.verification?.status === "verified" ? "✓ Verificado" : "Pendente"}
+              {user.email_confirmed_at ? '✓ Verificado' : 'Pendente'}
             </p>
           </CardContent>
         </Card>
@@ -36,7 +68,7 @@ export default async function ProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {user?.organizationMemberships?.length || 0}
+              {memberships?.length || 0}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Atualmente membro
@@ -46,64 +78,34 @@ export default async function ProfilePage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Segurança</CardTitle>
+            <CardTitle className="text-sm font-medium">Conta</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {user?.twoFactorEnabled ? "🔒 2FA" : "🔓"}
+              {user.confirmed_at ? '🔒' : '🔓'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {user?.twoFactorEnabled ? "Ativado" : "Desativado"}
+              {user.confirmed_at ? 'Confirmada' : 'Pendente'}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Clerk User Profile Component */}
+      {/* Profile Form */}
       <Card>
         <CardHeader>
           <CardTitle>Gerenciar Perfil</CardTitle>
           <CardDescription>
-            Atualize suas informações, senha, 2FA e configurações de segurança
+            Atualize suas informações pessoais
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <UserProfile
-            appearance={{
-              elements: {
-                rootBox: "w-full",
-                card: "border-0 shadow-none",
-                navbar: "hidden md:block",
-                pageScrollBox: "p-0",
-              },
-            }}
-          >
-            {/* Custom pages no perfil */}
-            <UserProfile.Page label="Preferências" labelIcon={<span>⚙️</span>} url="preferences">
-              <div className="p-6 space-y-4">
-                <h3 className="text-lg font-semibold">Preferências do Sistema</h3>
-                <p className="text-sm text-muted-foreground">
-                  Configure suas preferências de uso do AtlasReg
-                </p>
-                {/* Adicionar preferências customizadas aqui */}
-              </div>
-            </UserProfile.Page>
-
-            <UserProfile.Page label="Atividade" labelIcon={<span>📊</span>} url="activity">
-              <div className="p-6 space-y-4">
-                <h3 className="text-lg font-semibold">Atividade Recente</h3>
-                <p className="text-sm text-muted-foreground">
-                  Últimas ações realizadas no sistema
-                </p>
-                {/* Log de atividades */}
-              </div>
-            </UserProfile.Page>
-          </UserProfile>
+          <ProfileForm user={user} profile={profile} />
         </CardContent>
       </Card>
 
       {/* Organization Memberships */}
-      {user?.organizationMemberships && user.organizationMemberships.length > 0 && (
+      {memberships && memberships.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Minhas Organizações</CardTitle>
@@ -113,15 +115,15 @@ export default async function ProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {user.organizationMemberships.map((membership) => (
+              {memberships.map((membership: any) => (
                 <div
                   key={membership.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    {membership.organization.imageUrl && (
+                    {membership.organization.avatar_url && (
                       <img
-                        src={membership.organization.imageUrl}
+                        src={membership.organization.avatar_url}
                         alt={membership.organization.name}
                         className="w-10 h-10 rounded-full"
                       />
@@ -129,14 +131,16 @@ export default async function ProfilePage() {
                     <div>
                       <p className="font-medium">{membership.organization.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {membership.role}
+                        {membership.organization.slug}
                       </p>
                     </div>
                   </div>
                   <span className="px-3 py-1 bg-[#00ADE8]/10 text-[#00ADE8] rounded-full text-xs font-medium">
-                    {membership.role === 'org:admin' && 'Administrador'}
-                    {membership.role === 'org:member' && 'Membro'}
-                    {membership.role === 'org:viewer' && 'Visualizador'}
+                    {membership.role === 'admin' && 'Administrador'}
+                    {membership.role === 'manager' && 'Gerente'}
+                    {membership.role === 'editor' && 'Editor'}
+                    {membership.role === 'viewer' && 'Visualizador'}
+                    {membership.role === 'member' && 'Membro'}
                   </span>
                 </div>
               ))}
@@ -150,6 +154,6 @@ export default async function ProfilePage() {
         Powered by <span className="text-[#00ADE8] font-semibold">ness.</span>
       </div>
     </div>
-  );
+  )
 }
 

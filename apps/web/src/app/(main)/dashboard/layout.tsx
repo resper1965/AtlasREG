@@ -1,8 +1,8 @@
 import { ReactNode } from "react";
-import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
-import { ClerkHeader } from "@/components/auth/clerk-header";
+import { createClient } from "@/lib/supabase/server";
+import { DashboardHeader } from "@/components/auth/dashboard-header";
 import { Sidebar } from "@/components/ui/sidebar";
 
 export default async function DashboardLayout({
@@ -10,20 +10,20 @@ export default async function DashboardLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  // Verificar autenticação
-  const { userId } = await auth();
-  
-  if (!userId) {
-    redirect('/sign-in');
-  }
+  // Verificar autenticação com Supabase
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Obter dados do usuário para logging/audit
-  const user = await currentUser();
+  if (!user) {
+    redirect('/login');
+  }
 
   return (
     <div className="flex h-screen flex-col">
-      {/* Header com Clerk */}
-      <ClerkHeader />
+      {/* Header com Supabase */}
+      <DashboardHeader />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
