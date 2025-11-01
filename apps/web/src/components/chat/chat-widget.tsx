@@ -226,16 +226,17 @@ export function ChatWidget() {
                     )}
                   >
                     {msg.role === 'assistant' ? (
-                      <ReactMarkdown
-                        className="prose prose-sm prose-invert max-w-none [&>p]:leading-relaxed [&>ul]:my-2 [&>ul]:list-disc [&>ul]:list-inside [&>ol]:my-2 [&>ol]:list-decimal [&>ol]:list-inside [&>h3]:text-sm [&>h3]:font-semibold [&>h3]:mt-3 [&>h3]:mb-1 [&>table]:text-xs [&>table]:my-2"
-                        components={{
-                          // Customizar elementos do markdown
-                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                          strong: ({ children }) => <strong className="text-foreground font-semibold">{children}</strong>,
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
+                      <div className="prose prose-sm prose-invert max-w-none [&>p]:leading-relaxed [&>ul]:my-2 [&>ul]:list-disc [&>ul]:list-inside [&>ol]:my-2 [&>ol]:list-decimal [&>ol]:list-inside [&>h3]:text-sm [&>h3]:font-semibold [&>h3]:mt-3 [&>h3]:mb-1 [&>table]:text-xs [&>table]:my-2">
+                        <ReactMarkdown
+                          components={{
+                            // Customizar elementos do markdown
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            strong: ({ children }) => <strong className="text-foreground font-semibold">{children}</strong>,
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
                     ) : (
                       <p className="leading-relaxed">{msg.content}</p>
                     )}

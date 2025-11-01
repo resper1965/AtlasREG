@@ -1,7 +1,9 @@
 import { ReactNode } from 'react'
 
 import type { Metadata } from 'next'
-import { Montserrat } from 'next/font/google'
+// TEMPORÁRIO: Google Fonts comentado devido a problemas de rede no build
+// Veja PROBLEMA_BUILD.md para soluções permanentes
+// import { Montserrat } from 'next/font/google'
 
 import { Toaster } from '@/components/ui/sonner'
 import { getPreference } from '@/server/server-actions'
@@ -15,17 +17,18 @@ import {
 
 import './globals.css'
 
-const montserrat = Montserrat({ 
-  subsets: ["latin"],
-  weight: ['400', '500', '600'],
-  variable: '--font-montserrat'
-});
+// TEMPORÁRIO: Usando fonte do sistema
+// const montserrat = Montserrat({
+//   subsets: ["latin"],
+//   weight: ['400', '500', '600'],
+//   variable: '--font-montserrat'
+// });
 
 export const metadata: Metadata = {
   title: 'AtlasReg by ness. | Inteligência de Mercado para Transmissão de Energia',
   description: 'Plataforma de IA para monitoramento automático e análise do setor de transmissão de energia elétrica brasileiro. Desenvolvido por resper@ness.com.br - Powered by ness.',
   keywords: ['energia elétrica', 'transmissão', 'ANEEL', 'ONS', 'SIGEL', 'inteligência de mercado', 'ness'],
-  authors: [{ name: 'Ricardo Esper', email: 'resper@ness.com.br' }],
+  authors: [{ name: 'Ricardo Esper' }],
   creator: 'ness.',
   publisher: 'ness.',
   openGraph: {
@@ -57,7 +60,7 @@ export default async function RootLayout({
       data-theme-preset={themePreset}
       suppressHydrationWarning
     >
-      <body className={`${montserrat.className} min-h-screen antialiased`}>
+      <body className="min-h-screen antialiased font-sans">{/* TEMPORÁRIO: font-sans até configurar Montserrat */}
         <PreferencesStoreProvider
           themeMode={themeMode}
           themePreset={themePreset}

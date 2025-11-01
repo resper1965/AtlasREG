@@ -11,8 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function OutorgasPage() {
-  const outorgas = EVENTOS_MOCK.filter(e => 
-    e.tipo === EventoTipo.OUTORGA_CONCEDIDA || e.tipo === EventoTipo.OUTORGA_VENCIDA
+  // TEMPORÁRIO: Mock só tem OUTORGA_CONCEDIDA, não tem OUTORGA_VENCIDA
+  const outorgas = EVENTOS_MOCK.filter(e =>
+    e.tipo === EventoTipo.OUTORGA_CONCEDIDA
   );
 
   return (

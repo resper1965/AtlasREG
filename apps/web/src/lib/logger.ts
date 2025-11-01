@@ -116,15 +116,15 @@ export function sanitize<T extends Record<string, unknown>>(
   obj: T,
   sensitiveFields: string[] = ['password', 'token', 'secret', 'apiKey', 'authorization']
 ): T {
-  const sanitized = { ...obj }
+  const sanitized = { ...obj } as any
 
   for (const field of sensitiveFields) {
     if (field in sanitized) {
-      sanitized[field] = '[REDACTED]' as never
+      sanitized[field] = '[REDACTED]'
     }
   }
 
-  return sanitized
+  return sanitized as T
 }
 
 /**

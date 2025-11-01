@@ -12,6 +12,32 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 
+// Types for Supabase nested queries
+type OrganizationMembership = {
+  id: string
+  role: string
+  joined_at: string
+  organization: {
+    id: string
+    name: string
+    slug: string
+    avatar_url: string | null
+    created_at: string
+  }
+}
+
+type MemberWithProfile = {
+  id: string
+  role: string
+  joined_at: string
+  profile: {
+    id: string
+    full_name: string | null
+    email: string
+    avatar_url: string | null
+  }
+}
+
 export default async function OrganizationsPage() {
   const supabase = await createClient()
 
@@ -44,13 +70,14 @@ export default async function OrganizationsPage() {
     .order('joined_at', { ascending: false })
 
   // Buscar organização atual do cookie/preferência
+  const typedMemberships = memberships as unknown as OrganizationMembership[] | null
   const currentOrgId =
-    memberships && memberships.length > 0
-      ? (memberships[0] as any).organization.id
+    typedMemberships && typedMemberships.length > 0
+      ? typedMemberships[0].organization.id
       : null
 
   // Se há uma organização atual, buscar detalhes e membros
-  let currentOrgMembers = null
+  let currentOrgMembers: MemberWithProfile[] | null = null
   if (currentOrgId) {
     const { data } = await supabase
       .from('organization_members')
@@ -70,11 +97,11 @@ export default async function OrganizationsPage() {
       .eq('organization_id', currentOrgId)
       .order('joined_at', { ascending: false })
 
-    currentOrgMembers = data
+    currentOrgMembers = data as unknown as MemberWithProfile[] | null
   }
 
-  const currentOrg = memberships?.find(
-    (m: any) => m.organization.id === currentOrgId
+  const currentOrg = typedMemberships?.find(
+    (m) => m.organization.id === currentOrgId
   )
 
   return (
@@ -197,8 +224,8 @@ export default async function OrganizationsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {memberships && memberships.length > 0 ? (
-                  memberships.map((membership: any) => (
+                {typedMemberships && typedMemberships.length > 0 ? (
+                  typedMemberships.map((membership) => (
                     <div
                       key={membership.id}
                       className="flex items-center justify-between rounded-lg border p-4 hover:bg-accent transition-colors"

@@ -282,9 +282,6 @@ export const eventosRecentes: Partial<Evento>[] = [
       justificativa: 'Novo ativo estratégico na região Norte, RAP de R$ 85M/ano por 30 anos',
     },
     analise_risco: {
-      risco_construcao: 70,
-      risco_ambiental: 85,
-      risco_social: 65,
       risco_regulatorio: 20,
       risco_financeiro: 25,
       risco_operacional: 45,

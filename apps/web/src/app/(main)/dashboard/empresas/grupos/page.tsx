@@ -10,15 +10,16 @@ export const metadata: Metadata = {
 
 export default function GruposEconomicosPage() {
   // Agrupar empresas por grupo
+  type Empresa = typeof TOP_TRANSMISSORAS[number];
   const grupos = TOP_TRANSMISSORAS.reduce((acc, emp) => {
     const grupo = emp.grupo;
     if (!acc[grupo]) {
-      acc[grupo] = { empresas: [], rapTotal: 0 };
+      acc[grupo] = { empresas: [] as Empresa[], rapTotal: 0 };
     }
     acc[grupo].empresas.push(emp);
     acc[grupo].rapTotal += emp.rapAnual;
     return acc;
-  }, {} as Record<string, { empresas: typeof TOP_TRANSMISSORAS, rapTotal: number }>);
+  }, {} as Record<string, { empresas: Empresa[], rapTotal: number }>);
 
   const gruposArray = Object.entries(grupos).map(([nome, data]) => ({
     nome,

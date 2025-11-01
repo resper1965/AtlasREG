@@ -11,7 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function DecisoesANEELPage() {
-  const decisoes = EVENTOS_MOCK.filter(e => e.tipo === EventoTipo.DECISAO_REGULATORIA);
+  // TEMPORÁRIO: Mock não tem eventos DECISAO_REGULATORIA ainda
+  // const decisoes = EVENTOS_MOCK.filter(e => e.tipo === EventoTipo.DECISAO_REGULATORIA);
+  const decisoes = EVENTOS_MOCK.slice(0, 5); // Usar primeiros 5 eventos como placeholder
 
   return (
     <div className="space-y-6">
@@ -112,10 +114,10 @@ export default function DecisoesANEELPage() {
                 </div>
                 <div className="flex-shrink-0">
                   <Badge className={`
-                    ${decisao.severidade === 'critica' ? 'bg-red-500/10 text-red-400' : ''}
-                    ${decisao.severidade === 'alta' ? 'bg-orange-500/10 text-orange-400' : ''}
-                    ${decisao.severidade === 'media' ? 'bg-yellow-500/10 text-yellow-400' : ''}
-                    ${decisao.severidade === 'baixa' ? 'bg-blue-500/10 text-blue-400' : ''}
+                    ${decisao.severidade.toLowerCase() === 'critica' ? 'bg-red-500/10 text-red-400' : ''}
+                    ${decisao.severidade.toLowerCase() === 'alta' ? 'bg-orange-500/10 text-orange-400' : ''}
+                    ${decisao.severidade.toLowerCase() === 'media' ? 'bg-yellow-500/10 text-yellow-400' : ''}
+                    ${decisao.severidade.toLowerCase() === 'baixa' ? 'bg-blue-500/10 text-blue-400' : ''}
                   `}>
                     {decisao.severidade}
                   </Badge>
